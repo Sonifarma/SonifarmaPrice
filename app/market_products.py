@@ -49,3 +49,66 @@ def make_router(db_factory, demo_loader, mode_getter):
                 'demo': mode_getter() == 'demo'}
 
     return router
+
+
+def make_detail_router(db_factory, demo_loader, mode_getter):
+    router = APIRouter(prefix='/api/mercado/produtos', tags=['Ficha de produto'])
+
+    @router.get('/{embalagem_id}')
+    def detail(embalagem_id: int):
+        if embalagem_id<=0:
+            raise HTTPException(422,'Embalagem invalida.')
+        if mode_getter()=='demo':
+            row=next((dict(r) for r in demo_loader() if str(r.get('embalagem_id'))==str(embalagem_id)),None)
+            if row is None:
+                raise HTTPException(404,'Produto nao encontrado.')
+            return {'produto':{k:row.get(k) for k in ['produto_id','embalagem_id','descricao','ean','codigo','apresentacao','preco']},
+                    'classificacoes':row.get('classificacoes',[]),'grupo_remarcacao':row.get('grupo_remarcacao'),
+                    'classificacao_disponivel':'classificacoes' in row,'grupo_remarcacao_disponivel':'grupo_remarcacao' in row,
+                    'demo':True}
+        if mode_getter()!='postgres':
+            raise HTTPException(400,'MODE invalido')
+        try:
+            with closing(db_factory()) as con:
+                with con.cursor() as cur:
+                    cur.execute('SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=ANY(%s)',
+                                (['classificacao','classificacaoproduto','gruporemarcacao','embalagem'],))
+                    columns=set(cur.fetchall())
+                    def has(table,*names):
+                        return all((table,name) in columns for name in names)
+                    def label(table):
+                        return next((name for name in ['nome','descricao','denominacao'] if (table,name) in columns),None)
+                    cur.execute('SELECT p.id AS produto_id,e.id AS embalagem_id,p.descricao,e.codigobarras AS ean,p.codigo,e.descricao AS apresentacao,e.precovenda AS preco FROM produto p JOIN embalagem e ON e.produtoid=p.id WHERE e.id=%s',(embalagem_id,))
+                    row=cur.fetchone()
+                    if row is None:
+                        raise HTTPException(404,'Produto nao encontrado.')
+                    product=dict(zip([d[0] for d in cur.description],row))
+                    from decimal import Decimal
+                    import math
+                    price=product.get('preco')
+                    if isinstance(price,Decimal):
+                        product['preco']=float(price) if price.is_finite() else None
+                    elif isinstance(price,float) and not math.isfinite(price):
+                        product['preco']=None
+                    cls_label,group_label=label('classificacao'),label('gruporemarcacao')
+                    cls_available=bool(cls_label and has('classificacao','id') and has('classificacaoproduto','produtoid','classificacaoid'))
+                    group_available=bool(group_label and has('gruporemarcacao','id') and has('embalagem','gruporemarcacaoid'))
+                    classes=[];group=None;limited=False
+                    if cls_available:
+                        cur.execute(f'SELECT DISTINCT c.id,c."{cls_label}"::text FROM classificacaoproduto cp JOIN classificacao c ON c.id=cp.classificacaoid WHERE cp.produtoid=%s ORDER BY 2,1 LIMIT 101',(product['produto_id'],))
+                        rows=cur.fetchall();limited=len(rows)>100
+                        classes=[{'id':r[0],'nome':r[1]} for r in rows[:100]]
+                    if group_available:
+                        cur.execute(f'SELECT g.id,g."{group_label}"::text FROM embalagem e JOIN gruporemarcacao g ON g.id=e.gruporemarcacaoid WHERE e.id=%s',(embalagem_id,))
+                        row=cur.fetchone()
+                        if row:group={'id':row[0],'nome':row[1]}
+            return {'produto':product,'classificacoes':classes,'grupo_remarcacao':group,
+                    'classificacao_disponivel':cls_available,'grupo_remarcacao_disponivel':group_available,
+                    'classificacoes_limitadas':limited,'demo':False}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            log.exception('Falha na ficha de produto Alpha7')
+            raise HTTPException(503,'Nao foi possivel consultar a ficha no Alpha7.') from exc
+
+    return router

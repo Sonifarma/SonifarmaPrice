@@ -8,7 +8,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ['MODE'] = 'demo'
-from app import main, search_center
+from app import main, search_center, local_stores
 import uvicorn
 
 
@@ -21,7 +21,14 @@ def run():
                      descricao='Produto de teste ' + str(i).zfill(3), codigo=str(100+i)) for i in range(110))
     rows[4]['descricao'] = '=HYPERLINK("https://example.invalid")'
     rows[5]['descricao'] = 'Produto <img src=x onerror=alert(1)>'
+    rows[0]['classificacoes']=[{'id':7,'nome':'Linha demonstrativa'}]
+    rows[0]['grupo_remarcacao']={'id':8,'nome':'Remarcacao demonstrativa'}
     main.demo_rows = lambda: rows
+    local_stores.overpass = lambda center,radius: [
+        {'type':'node','id':1,'lat':0.001,'lon':0,'tags':{'name':'Mercado ficticio','shop':'supermarket','website':'https://loja.example.com'}},
+        {'type':'way','id':2,'center':{'lat':0.002,'lon':0},'tags':{'name':'Farmacia ficticia','amenity':'pharmacy','website':'https://farmacia.example.com'}},
+        {'type':'node','id':3,'lat':1,'lon':0,'tags':{'name':'Fora do raio','shop':'cosmetics','website':'https://fora.example.com'}},
+    ]
     # Geocodificador ficticio: o teste de navegador nao acessa servico externo.
     search_center.geocode = lambda address: [{'endereco':'Rua demonstrativa, 10, Cidade de teste, Brasil','latitude':0.0,'longitude':0.0,'tipo':'house'}]
     with tempfile.TemporaryDirectory() as directory:

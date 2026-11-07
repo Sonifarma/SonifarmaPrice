@@ -161,3 +161,51 @@ GET `/api/mercado/comparar` aceita `usar_centro=true`, `centro_versao` e `raio`.
 30 testes Python aprovados, incluindo persistencia/confirmacao, cache/limite de chamadas, indisponibilidade da fonte preservando centro anterior, origem das alteracoes, versao concorrente e inclusao/exclusao efetiva por raio. Playwright aprovado para cadastro com provedor ficticio, confirmacao, retorno a pesquisa e consulta sem coordenadas digitadas. Consulta real ao Nominatim respondeu, com a limitacao de precisao relatada acima. Windows e endereco definitivo seguem sujeitos a verificacao local.
 
 Atualize pelo procedimento normal, com Price parado, e use Ctrl+F5. O atualizador cria backup verificado antes de substituir codigo. Para reverter a interface, preserve o estado atual e reponha somente os arquivos de codigo do backup anterior; nao sobrescreva .env/data. Tabelas novas podem permanecer, pois versoes anteriores nao as utilizam.
+
+## Ajuste V1.1.5 — ficha do produto e sites de lojas no raio
+
+### Ficha ao clicar no produto
+
+Clique no nome do produto na lista, ou no nome selecionado na Pesquisa de mercado. A ficha abre em janela com:
+
+- Identidade da embalagem: descricao, EAN, codigo, apresentacao e preco atual.
+- **Classificacoes do produto no Alpha7**, via classificacaoproduto/classificacao quando existem no schema, e **grupo de remarcacao** da embalagem. Labels nome/descricao/denominacao sao escolhidos somente se existem. Consulta baseada no padrao ja utilizado pelo CRM.
+- Grafico e observacoes de precos por **grupo de concorrentes e condicao comercial**, dentro do centro/raio/periodo da tela. Menor, mediana e maior preco observado, com origem na tabela de observacoes importadas.
+- Botao para buscar lojas e sites no raio.
+
+Grupo de produto/ERP e grupo comercial da loja sao conceitos separados. A ficha nao inventa classificacao quando as tabelas/colunas estao ausentes. O cadastro sem classificacao e distinguido de uma fonte que nao disponibiliza esse campo. A leitura de classificacoes tem limite de 100 itens, com aviso se truncada. Sem centro ou EAN, a ficha ainda mostra a identidade/grupos ERP disponiveis e explica a ausencia da comparacao regional.
+
+API: GET `/api/mercado/produtos/{embalagem_id}`. Inspecao de metadata e consultas parametrizadas apenas SELECT, conexao somente leitura fechada ao terminar; nenhuma tabela/indice do Alpha7 e alterado.
+
+### Descoberta de lojas e seus sites
+
+Na Pesquisa de mercado, clique em **Buscar lojas e sites no raio**. A busca utiliza o centro confirmado e o raio atual, sem transmitir EAN, preco ou custo ao provedor. Consulta API publica Overpass/OpenStreetMap para supermercados/atacarejos, perfumarias/cosmeticos e farmacias.
+
+Cada resultado mostra nome, grupo, distancia em linha reta, site declarado (quando informado no cadastro OSM) e link do registro de origem. Enderecos de site sao aceitos apenas como HTTP(S) publico, sem credenciais/portas incomuns ou enderecos IP privados. O servidor **nao acessa os sites retornados**; eles sao links para conferencia pelo usuario. Nenhum dominio e deduzido a partir do nome comercial.
+
+**Localizar uma loja fisica no raio nao comprova que seu site possui o produto, que o site e oficial/ativo ou que o preco online se aplica a filial.** O site pode ser da rede inteira. Nesta entrega nao ha coleta de precos dos sites; os graficos continuam usando observacoes importadas. Uma etapa posterior precisara de conectores por fonte autorizada e vinculacao confiavel de EAN/filial/condicoes.
+
+Supermercados/perfumarias usam a categoria declarada no OSM. Farmacias ficam pendentes de distinguir rede e independente; marca sozinha nao e prova suficiente. O operador pode selecionar e confirmar o grupo com motivo. A correcao e salva no Price com auditoria e aplicada as proximas respostas da descoberta. Nao reclassifica o produto no ERP nem reescreve grupos de observacoes CSV antigas.
+
+### Fonte, cache e limites
+
+Endpoint fixo HTTPS `https://overpass-api.de/api/interpreter`, User-Agent identificavel, timeout de rede 30s e query 20s, maximo 5 MB/2000 cadastros. Resposta parcial/remark e recusada e o usuario pode reduzir o raio. Uma busca em andamento e intervalo minimo de 60s por processo para novas chamadas; cache por centro/versao/raio por dez minutos. Use um unico worker, como iniciar.bat. Sem retries automaticos ou contorno de restricoes de acesso.
+
+Dados comunitarios podem estar incompletos ou desatualizados. Ponto de way/relation e o centro geometrico informado pela fonte e pode diferir da entrada da loja. Deduplicacao e por tipo/ID OSM, nao por identidade fisica entre node e way. Fonte e atribuicao OSM/ODbL ficam visiveis. Falhas retornam mensagem clara e sao registradas, sem fabricar lojas/sites/precos.
+
+No ensaio real, uma referencia aproximada da Rua Iacanga em Americana/SP, em raio de 2 km, retornou **15 cadastros e quatro sites declarados**. O ensaio nao confirmou o numero 1016, os sites, precos ou cobertura completa, e nao salvou/alterou o centro da instalacao do usuario.
+
+### Persistencia e endpoints
+
+Tabelas novas aditivas em data/mercado.sqlite3: lojas_buscas (parametros, estado e snapshot), lojas_grupos (correcoes) e lojas_auditoria (antes/depois). Permanecem nos backups existentes. Configuracao e versao do centro sao preservadas; fonte geográfica exige centro confirmado e rejeita versao desatualizada.
+
+- POST `/api/mercado/lojas/buscar`: raio e centro_versao, retorna lojas e origem/cache.
+- PUT `/api/mercado/lojas/{tipo}/{id}/grupo`: grupo e motivo auditado.
+
+Mutacoes/consultas externas usam header explicito e verificacao de Origin, como o cadastro de centro. Isso nao e autenticacao por usuario e continua sendo uma aplicacao para rede interna protegida.
+
+### Testes e atualizacao
+
+37 testes Python aprovados, incluindo ficha ERP com grupos opcionais, sites publicos/invalidos, raio efetivo, deduplicacao, classificacao conservadora, cache, correcao auditada e falha registrada. Playwright/Chromium cobriu clique no nome, ficha, graficos por condicao, busca de lojas, sites e confirmacao de grupo usando fontes ficticias; o teste SQL em PostgreSQL embarcado tambem passou. Consulta real de estabelecimentos respondeu conforme limites acima. Windows e ficha do Alpha7 de producao seguem a validar no servidor local.
+
+Atualizacao padrao com Price parado e manutencao.py update, depois iniciar.bat e Ctrl+F5. O backup inclui as novas tabelas. Para reverter, preserve o estado atual e reponha apenas codigo de backup verificado, mantendo .env/data; tabelas novas podem permanecer sem interferir nas versoes anteriores.
