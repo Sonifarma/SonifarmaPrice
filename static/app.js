@@ -312,10 +312,10 @@
   }
   function groupControls(container,store,messageId) {
     const select=document.createElement('select');select.setAttribute('aria-label','Grupo de '+store.nome);select.add(new Option('Selecione o grupo',''));Object.entries(groups).forEach(([key,label])=>select.add(new Option(label,key)));select.value=store.grupo||'';
-    const reason=document.createElement('input');reason.placeholder='Motivo da classificação';reason.maxLength=300;reason.setAttribute('aria-label','Motivo da classificação de '+store.nome);
+    const reason=document.createElement('input');reason.placeholder='Motivo (opcional)';reason.maxLength=300;reason.setAttribute('aria-label','Motivo da classificação de '+store.nome);
     const save=document.createElement('button');save.type='button';save.className='small-btn';save.textContent='Confirmar grupo';
     save.addEventListener('click',async()=>{
-      if(!select.value||reason.value.trim().length<3){message(messageId,'Selecione o grupo e informe o motivo da classificação.',true);return;}
+      if(!select.value){message(messageId,'Selecione o grupo.',true);return;}
       save.disabled=true;
       try {
         const data=await json('/api/mercado/lojas/'+store.fonte_id+'/grupo',{method:'PUT',headers:configHeaders(),body:JSON.stringify({grupo:select.value,motivo:reason.value.trim()})});
