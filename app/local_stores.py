@@ -12,7 +12,7 @@ import time
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import Request as URLRequest, urlopen
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from app.search_center import get_center, mutation
 
@@ -102,7 +102,9 @@ def normalize(elements,center,radius,distance,corrections):
         group='supermercados' if tags.get('shop') in {'supermarket','wholesale'} else 'perfumarias' if tags.get('shop') in {'cosmetics','perfumery'} else None
         if source in corrections:group=corrections[source]
         site=safe_site(tags.get('website')) or safe_site(tags.get('contact:website'))
-        stores[source]={'fonte_id':source,'nome':str(tags['name'])[:200],'grupo':group,
+        from app.competitors import normalize_cnpj
+        cnpj=next((value for key in ['ref:vatin','cnpj','taxid'] if (value:=normalize_cnpj(tags.get(key)))),None)
+        stores[source]={'cnpj':cnpj,'fonte_id':source,'nome':str(tags['name'])[:200],'grupo':group,
           'grupo_confirmado':source in corrections,'revisao_necessaria':group is None,
           'distancia_km':round(dist,3),'site':site,'site_status':'declarado no cadastro OSM; nao verificado' if site else 'site nao informado ou invalido',
           'fonte_url':'https://www.openstreetmap.org/'+source,'fonte':'OpenStreetMap / Overpass',
@@ -116,7 +118,7 @@ def make_router(path,distance):
     router=APIRouter(prefix='/api/mercado/lojas',tags=['Lojas e sites no raio'])
 
     @router.post('/buscar')
-    def search(body:StoreSearch,request:Request,x_price_config:str|None=Header(default=None)):
+    def search(body:StoreSearch,request:Request,background_tasks:BackgroundTasks,x_price_config:str|None=Header(default=None)):
         global last_search
         mutation(request,x_price_config)
         center=get_center(path())
@@ -130,7 +132,10 @@ def make_router(path,distance):
             result=json.loads(cached['resultado'])
             for row in result['lojas']:
                 if row['fonte_id'] in corrections:row.update(grupo=corrections[row['fonte_id']],grupo_confirmado=True,revisao_necessaria=False)
-            return dict(result,cache=True)
+            from app.competitors import register,enrich_pending
+            stats=register(path(),result['lojas'],result['consultado_em'])
+            background_tasks.add_task(enrich_pending,path(),{row['fonte_id'] for row in result['lojas']})
+            return dict(result,cache=True,cadastro=stats)
         if not lock.acquire(blocking=False):raise HTTPException(429,'Busca de lojas em andamento. Aguarde.',headers={'Retry-After':'60'})
         try:
             if time.monotonic()-last_search<60:raise HTTPException(429,'Aguarde um minuto antes de outra busca online.',headers={'Retry-After':'60'})
@@ -146,6 +151,9 @@ def make_router(path,distance):
                     'aviso':'Sites declarados no OpenStreetMap. Nao comprova funcionamento, produto, estoque ou preco da filial. © colaboradores OSM (ODbL).'}
             with database(path()) as con:
                 con.execute('INSERT INTO lojas_buscas(criado_em,centro_versao,raio,estado,resultado) VALUES(?,?,?,?,?)',(result['consultado_em'],center['versao'],body.raio,'concluido',json.dumps(result)))
+            from app.competitors import register,enrich_pending
+            result['cadastro']=register(path(),rows,result['consultado_em'])
+            background_tasks.add_task(enrich_pending,path(),{row['fonte_id'] for row in rows})
             return result
         finally:lock.release()
 
@@ -158,6 +166,8 @@ def make_router(path,distance):
             before=con.execute('SELECT * FROM lojas_grupos WHERE fonte_id=?',(key,)).fetchone()
             con.execute('INSERT INTO lojas_grupos VALUES(?,?,?,?) ON CONFLICT(fonte_id) DO UPDATE SET grupo=excluded.grupo,motivo=excluded.motivo,atualizado_em=excluded.atualizado_em',(key,body.grupo,body.motivo,now()))
             con.execute('INSERT INTO lojas_auditoria(fonte_id,antes,depois,criado_em) VALUES(?,?,?,?)',(key,json.dumps(dict(before) if before else {}),json.dumps({'grupo':body.grupo,'motivo':body.motivo}),now()))
+        from app.competitors import set_group
+        set_group(path(),key,body.grupo)
         return {'fonte_id':key,'grupo':body.grupo}
 
     return router
