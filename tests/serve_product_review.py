@@ -8,7 +8,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ['MODE'] = 'demo'
-from app import main, search_center, local_stores, competitors
+from app import main, search_center, local_stores, competitors, online_prices
 import uvicorn
 
 
@@ -33,6 +33,11 @@ def run():
         'descricao_situacao_cadastral':'ATIVA','cnae_fiscal':4711302,'cnae_fiscal_descricao':'Supermercados',
         'logradouro':'Rua de teste','numero':'10','municipio':'Cidade de teste','uf':'SP',
         'consultado_em':competitors.now(),'fonte':'Fonte ficticia de teste'}
+    online_prices.SOURCES['drogal']['nomes'].add('FARMACIA FICTICIA')
+    online_prices.catalog = lambda source,ean: [{'ean':ean,'produto':'Produto online ficticio',
+        'preco':12.34,'moeda':'BRL','url':'https://www.drogal.com.br/produto-ficticio/p',
+        'vendedor':'Drogal','condicao':'Preco de teste do catalogo, filial nao confirmada',
+        'abrangencia':'site_da_rede','filial_confirmada':False}]
     # Geocodificador ficticio: o teste de navegador nao acessa servico externo.
     search_center.geocode = lambda address: [{'endereco':'Rua demonstrativa, 10, Cidade de teste, Brasil','latitude':0.0,'longitude':0.0,'tipo':'house'}]
     with tempfile.TemporaryDirectory() as directory:

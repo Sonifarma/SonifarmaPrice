@@ -6,6 +6,7 @@
   const number = value => present(value) ? Number(value).toLocaleString('pt-BR', {maximumFractionDigits:2}) : '—';
   const dateBR = value => {const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);return match ? `${match[3]}/${match[2]}/${match[1]}` : 'Não informada';};
   const groups = {supermercados:'Supermercados e atacarejos',perfumarias:'Perfumarias',farmacias_redes:'Farmácias de rede',farmacias_independentes:'Farmácias independentes'};
+  let onlineController,onlineRequest=0;
   let entryAvailable = false, current = [], applied = null, offset = 0, hasMore = false, dirty = false;
   let controller, requestId = 0, marketController, marketRequest = 0, marketItems = [];
   let detailController,detailId=0,activeProduct=null,storesController,storesId=0,storesOffset=0;
@@ -121,6 +122,7 @@
     const link=document.createElement('a');link.href=url;link.download='SonifarmaPrice_pagina_consultada.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   function resetMarket() {
+    clearOnline();
     marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;clearStores('Centro recarregado. Carregando os concorrentes cadastrados no raio atual.');loadSavedStores();
   }
   function showCenter() {
@@ -178,6 +180,7 @@
     $('market-suggestions').hidden=true;$('eanmerc').setAttribute('aria-expanded','false');
   }
   function chooseMarketProduct(item) {
+    clearOnline();
     closeSuggestions();marketSelection=item;$('eanmerc').value=item.ean;
     $('selected-product').textContent=item.descricao || 'Consultar produto';$('selected-product').disabled=!item.embalagem_id;
     marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;
@@ -249,6 +252,7 @@
   ['eanmerc','market-days','raiomerc'].forEach(id=>$(id).addEventListener('input',()=>{
     marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;
     if(id==='eanmerc'){$('selected-product').textContent='Consultar produto';$('selected-product').disabled=true;}
+    if(id!=='market-days')clearOnline();
     if(id==='raiomerc')clearStores('Raio alterado. Busque novamente as lojas.');
     message('marketmsg','Filtros alterados. Consulte para carregar as observações.');
   }));
@@ -268,6 +272,37 @@
     try {const data=await json('/api/mercado/comparar?'+params,{signal:marketController.signal});if(token!==marketRequest)return;marketItems=data.observacoes;renderMarket();message('marketmsg',marketItems.length+' observações no raio de '+number(params.get('raio'))+' km. '+data.aviso);}
     catch(error){if(error.name!=='AbortError'&&token===marketRequest){marketItems=[];renderMarket();message('marketmsg',error.message,true);}}
     finally{if(token===marketRequest)$('market-search').disabled=false;}
+  });
+  function clearOnline() {
+    onlineController?.abort();onlineRequest++;$('online-search').disabled=false;$('online-sources').replaceChildren();
+    empty($('online-rows'),'Consulte os sites para carregar preços deste EAN.',7);message('online-message','Selecione o produto e consulte os sites online.');
+  }
+  $('online-search').addEventListener('click',async()=>{
+    const query=$('eanmerc').value.trim(),ean=marketSelection?.ean||(/^[0-9]{8,14}$/.test(query)?query:null);
+    if(!ean){if(query.length>=2)await lookupProducts(query);message('online-message','Selecione um produto encontrado ou informe o EAN completo.',true);return;}
+    if(!savedCenter){message('online-message','Cadastre o centro para selecionar as redes dentro do raio.',true);tab('local');return;}
+    const radius=Number($('raiomerc').value);
+    if(!Number.isFinite(radius)||radius<.5||radius>50){message('online-message','Informe um raio entre 0,5 e 50 km.',true);return;}
+    clearOnline();onlineController=new AbortController();const token=++onlineRequest;$('online-search').disabled=true;closeSuggestions();
+    message('online-message','Consultando catálogos públicos pelo EAN; a consulta pode levar até um minuto.');
+    try {
+      const data=await json('/api/mercado/online/consultar',{method:'POST',headers:configHeaders(),body:JSON.stringify({ean,raio:radius,centro_versao:savedCenter.versao}),signal:onlineController.signal});
+      if(token!==onlineRequest)return;
+      $('online-rows').replaceChildren();$('online-sources').replaceChildren();let count=0;
+      data.fontes.forEach(source=>{
+        const note=document.createElement('p');note.textContent=source.rede+' — '+(source.mensagem||(source.ofertas.length?`${source.ofertas.length} oferta(s) ${source.cache?'em cache':'consultada(s)'}.`:'Sem oferta disponível com esse EAN no catálogo.'));$('online-sources').append(note);
+        source.ofertas.forEach(offer=>{
+          count++;const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean);cell(row,money(offer.preco));cell(row,offer.condicao+' Preço da filial não confirmado.');
+          cell(row,(source.coletado_em?new Date(source.coletado_em).toLocaleString('pt-BR'):'Não informada')+(source.desatualizado?' · COLETA ANTERIOR — fonte indisponível':source.cache?' · cache':''));
+          cell(row,source.lojas_no_raio.map(store=>store.nome+' — '+store.endereco+' ('+number(store.distancia_km)+' km)').join('; '));
+          const target=cell(row,'');const link=document.createElement('a');link.href=offer.url;link.textContent='Conferir oferta no site';link.target='_blank';link.rel='noopener noreferrer';target.append(link);$('online-rows').append(row);
+        });
+      });
+      if(!count)empty($('online-rows'),'Nenhuma oferta retornada pelas fontes consultadas. Confira o estado de cada fonte acima.',7);
+      if(data.sem_integracao.length){const note=document.createElement('p');note.textContent='Lojas ainda sem integração de preços: '+data.sem_integracao.join(', ')+'.';$('online-sources').append(note);}
+      message('online-message',`${count} oferta(s) de site para EAN ${data.ean}. `+(data.fontes.length?data.aviso:'Nenhuma rede integrada foi identificada no cadastro dentro do raio. Busque ou confira os concorrentes cadastrados.'));
+    }catch(error){if(error.name!=='AbortError'&&token===onlineRequest)message('online-message',error.message,true);}
+    finally{if(token===onlineRequest)$('online-search').disabled=false;}
   });
   function marketScope(ean) {
     if(!savedCenter)throw Error('Cadastre o centro da pesquisa para comparar por grupo e raio.');

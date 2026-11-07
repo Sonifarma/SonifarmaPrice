@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.9')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.2.0')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
@@ -79,7 +79,7 @@ def km(lat1,lon1,lat2,lon2):
 @app.get('/api/mercado/status')
 def market_status():
  with localdb() as con: n=con.execute('SELECT COUNT(*) FROM observacoes').fetchone()[0]
- return {'observacoes':n,'coleta_automatica':False,'alteracao_erp':False,'origem':'importacao CSV manual'}
+ return {'observacoes':n,'coleta_automatica':False,'alteracao_erp':False,'origem':'observacoes locais por CSV; precos dos sites consultados separadamente','consulta_online':True,'fontes_online':['Drogal','Drogaria Sao Paulo']}
 @app.post('/api/mercado/importar')
 async def market_import(arquivo:UploadFile=File(...)):
  # Somente arquivo local e estruturado, sem scraping nem conexão com sites externos.
@@ -143,3 +143,6 @@ app.include_router(make_local_stores_router(lambda: LOCAL_DB, km))
 
 from app.competitors import make_router as make_competitors_router
 app.include_router(make_competitors_router(lambda: LOCAL_DB, km))
+
+from app.online_prices import make_router as make_online_prices_router
+app.include_router(make_online_prices_router(lambda: LOCAL_DB, km))
