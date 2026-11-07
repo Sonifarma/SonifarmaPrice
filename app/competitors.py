@@ -127,12 +127,18 @@ def apply_identified(path):
     return count
 
 
-def set_group(path,source,group):
+def set_group(path,source,group,reason='Conferido pelo operador'):
+    # Uma transacao atualiza o cadastro e a regra aplicada nas proximas buscas.
+    from app.local_stores import database as stores_database
+    with stores_database(path):pass
     with database(path) as con:
         row=con.execute('SELECT * FROM concorrentes_cadastro WHERE fonte_id=?',(source,)).fetchone()
-        if row and (row['grupo']!=group or not row['grupo_confirmado']):
-            con.execute('UPDATE concorrentes_cadastro SET grupo=?,grupo_confirmado=1 WHERE id=?',(group,row['id']))
-            audit(con,row['id'],'grupo_confirmado',{'grupo':row['grupo']},{'grupo':group})
+        if row is None:raise HTTPException(404,'Concorrente nao encontrado no cadastro. Recarregue a lista.')
+        before=con.execute('SELECT * FROM lojas_grupos WHERE fonte_id=?',(source,)).fetchone()
+        con.execute('INSERT INTO lojas_grupos VALUES(?,?,?,?) ON CONFLICT(fonte_id) DO UPDATE SET grupo=excluded.grupo,motivo=excluded.motivo,atualizado_em=excluded.atualizado_em',(source,group,reason,now()))
+        con.execute('INSERT INTO lojas_auditoria(fonte_id,antes,depois,criado_em) VALUES(?,?,?,?)',(source,json.dumps(dict(before) if before else {}),json.dumps({'grupo':group,'motivo':reason}),now()))
+        con.execute('UPDATE concorrentes_cadastro SET grupo=?,grupo_confirmado=1 WHERE id=?',(group,row['id']))
+        audit(con,row['id'],'grupo_confirmado',{'grupo':row['grupo']},{'grupo':group,'motivo':reason})
 
 
 def fetch_cnpj(cnpj):

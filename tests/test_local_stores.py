@@ -76,6 +76,48 @@ class StoreApiTests(unittest.TestCase):
         self.assertEqual(response.status_code,409)
 
 
+    def expire_source_cache(self):
+        with local_stores.database(self.path) as con:con.execute("UPDATE lojas_buscas SET criado_em='2000-01-01'")
+
+    def test_offline_source_keeps_exact_shared_directory_in_current_radius(self):
+        self.search();self.expire_source_cache()
+        with patch.object(local_stores,'last_search',float('-inf')),patch.object(local_stores,'overpass',side_effect=TimeoutError()),self.assertLogs(local_stores.log,level='ERROR'):
+            response=self.search(.5)
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertTrue(response.json()['fallback'])
+        self.assertIsNone(response.json()['consultado_em'])
+        directory=self.client.get('/api/concorrentes?raio=.5&centro_versao=1').json()
+        self.assertEqual(response.json()['lojas'],directory['items'])
+        self.assertEqual(len(directory['items']),3)
+        self.assertNotIn('node/3',[row['fonte_id'] for row in directory['items']])
+        self.assertEqual(response.json()['cadastro']['adicionados'],0)
+
+    def test_online_refresh_returns_same_directory_including_previously_saved_store(self):
+        self.search();self.expire_source_cache()
+        with patch.object(local_stores,'last_search',float('-inf')),patch.object(local_stores,'overpass',return_value=ELEMENTS[:1]):
+            refreshed=self.search().json()
+        self.assertFalse(refreshed['fallback'])
+        directory=self.client.get('/api/concorrentes?raio=2&centro_versao=1').json()
+        self.assertEqual(refreshed['lojas'],directory['items'])
+        self.assertEqual(len(directory['items']),3)
+        self.assertEqual(self.search().json()['lojas'],directory['items'])
+
+    def test_group_can_be_changed_offline_and_survives_source_refresh(self):
+        self.search()
+        with patch.object(local_stores,'overpass',side_effect=AssertionError('Edicao local nao deve consultar rede')):
+            response=self.client.put('/api/mercado/lojas/way/2/grupo',headers=self.headers,json={'grupo':'farmacias_redes','motivo':'Filial conferida no cadastro'})
+            self.assertEqual(response.status_code,200,response.text)
+            directory=self.client.get('/api/concorrentes?raio=2&centro_versao=1').json()
+        self.assertEqual(next(r for r in directory['items'] if r['fonte_id']=='way/2')['grupo'],'farmacias_redes')
+        self.expire_source_cache()
+        with patch.object(local_stores,'last_search',float('-inf')):refreshed=self.search().json()
+        self.assertEqual(next(r for r in refreshed['lojas'] if r['fonte_id']=='way/2')['grupo'],'farmacias_redes')
+        unknown=self.client.put('/api/mercado/lojas/way/999/grupo',headers=self.headers,json={'grupo':'farmacias_redes','motivo':'Identificador inexistente'})
+        self.assertEqual(unknown.status_code,404)
+        with local_stores.database(self.path) as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM lojas_grupos WHERE fonte_id='way/999'").fetchone()[0],0)
+
+
 class ProductDetailTests(unittest.TestCase):
     def test_demo_detail_keeps_erp_groups_distinct(self):
         rows=[{'produto_id':1,'embalagem_id':11,'descricao':'Produto teste','ean':'4006381333931','classificacoes':[{'id':7,'nome':'Categoria ERP'}],'grupo_remarcacao':{'id':8,'nome':'Grupo ERP'}}]
