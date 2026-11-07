@@ -1,6 +1,7 @@
 param(
     [ValidateSet('update','backup','verify')][string]$Acao='update',
     [string]$Destino,
+    [string]$Origem,
     [string]$Arquivo
 )
 $ErrorActionPreference = 'Stop'
@@ -14,6 +15,7 @@ try {
     }
     $Parametros = @((Join-Path $Pasta 'manutencao.py'), $Acao)
     if ($Destino) { $Parametros += @('--destination', $Destino) }
+    if ($Origem) { $Parametros += @('--source', $Origem) }
     if ($Arquivo) { $Parametros += @('--archive', $Arquivo) }
     & $Python @Parametros
     if ($LASTEXITCODE -ne 0) { throw 'Manutencao falhou. Confira a mensagem acima antes de iniciar o painel.' }

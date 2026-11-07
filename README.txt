@@ -23,7 +23,8 @@ IMPORTANTE:
 - Instalacao como servico Windows NAO automatizada nesta entrega; validar primeiro em execucao manual.
 - Se o esquema real divergir das amostras, ajustar consulta SQL antes de uso em producao.
 
-ATUALIZACOES PELO GITHUB
-- Consulte OPERACAO_LOCAL.md para migrar a instalacao ZIP para Git.
-- Nas proximas versoes: pare iniciar.bat, execute ATUALIZAR_PRICE.bat e inicie novamente.
-- Backup verificado de codigo, .env e data antes de atualizar.
+ATUALIZACOES PELO GITHUB - SEM GIT NO SERVIDOR
+- Pare iniciar.bat e execute ATUALIZAR_PRICE.bat (Python direto, sem PowerShell).
+- Alternativa: .venv\Scripts\python.exe manutencao.py update
+- Aceita --source com pasta extraida ou ZIP, como o fluxo do CRM.
+- Consulte OPERACAO_LOCAL.md para backup, verificacao e recuperacao.

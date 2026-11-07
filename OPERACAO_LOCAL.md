@@ -1,68 +1,65 @@
-# Atualizacao do SonifarmaPrice no Windows
+# Operacao local — atualizacao sem Git
 
-O fluxo segue o CRM: parar, criar backup verificado, atualizar o codigo e iniciar para validar. Estes comandos sao exclusivos do Price (porta 8770); nao encerram o CRM.
+Windows Server 2019, Python 3.12, pasta `C:\SonifarmaPrice`, ambiente `.venv` proprio e porta 8770. Nao altera nem encerra CRM ou outros sistemas.
 
-## Primeira instalacao com Git
+## Atualizacao normal
 
-Instale Git para Windows e Python 3.12. Se o Price atual veio do ZIP, pare-o com Ctrl+C no terminal de `iniciar.bat` e mantenha essa instalacao como copia. No PowerShell, crie uma instalacao em outra pasta:
-
-```powershell
-git clone https://github.com/Sonifarma/SonifarmaPrice.git C:\SonifarmaPriceGit
-Copy-Item C:\SonifarmaPrice\.env C:\SonifarmaPriceGit\.env
-if (Test-Path C:\SonifarmaPrice\data) {
-    Copy-Item C:\SonifarmaPrice\data C:\SonifarmaPriceGit\data -Recurse
-}
-cd C:\SonifarmaPriceGit
-.\instalar.bat
-.\iniciar.bat
-```
-
-Ajuste os caminhos se sua instalacao original estiver em outra pasta. Nao execute as duas instalacoes ao mesmo tempo. O novo `.venv` e criado localmente; `.env` existente nao e substituido. Os scripts usam sua propria pasta, sem depender de `C:\SonifarmaPrice`.
-
-## Proximas atualizacoes
-
-1. Pare `iniciar.bat` com Ctrl+C. Garanta que outros operadores nao iniciarao o Price durante a manutencao.
-2. Na pasta da instalacao Git, execute:
+Pare o Price com Ctrl+C no terminal de `iniciar.bat`. Nao permita outra inicializacao durante a manutencao. No PowerShell:
 
 ```powershell
-.\ATUALIZAR_PRICE.bat
+cd C:\SonifarmaPrice
+.\.venv\Scripts\python.exe .\manutencao.py update
+if ($LASTEXITCODE -eq 0) { .\iniciar.bat }
 ```
 
-Para escolher o destino do backup, prefira outro disco:
+Ou use `ATUALIZAR_PRICE.bat`, que chama o Python diretamente sem executar PowerShell. Nenhuma assinatura de script ou alteracao de politica do Windows e necessaria.
+
+O atualizador baixa o ZIP da branch `main` do repositorio Sonifarma/SonifarmaPrice por HTTPS. Git nao precisa estar instalado; `.git` e configuracoes de Git nao sao utilizados. O codigo remoto e validado por sintaxe Python, mas isso nao substitui a revisao e testes antes de integrar uma atualizacao a main. Branches/PRs nao integrados nao sao baixados.
+
+Antes de substituir codigo, valida o pacote, cria backup verificado e confirma que a porta esta livre. Copia apenas arquivos reconhecidos do aplicativo (`app/*.py`, arquivos web de `static`, documentacao e scripts explicitamente permitidos). Nunca copia `.env`, `data`, `.venv`, credenciais ou bancos do pacote. Preserva outros arquivos locais e a pasta do ZIP extraido.
+
+Depois instala `requirements.txt` com o mesmo Python usado para chamar o atualizador. Use sempre o Python de `.venv` do Price, como acima. Nao inicia automaticamente o painel.
+
+## Mesmo fluxo do CRM: atualizar de pasta extraida
+
+Baixe o ZIP pelo GitHub e extraia em uma pasta separada. Informe a raiz que contem `app`, `static`, `requirements.txt` e `manutencao.py`:
 
 ```powershell
-.\ATUALIZAR_PRICE.bat -Destino 'D:\BackupsSonifarmaPrice'
+cd C:\SonifarmaPrice
+.\.venv\Scripts\python.exe .\manutencao.py update --source 'C:\SonifarmaPrice\SonifarmaPrice-main'
+if ($LASTEXITCODE -eq 0) { .\iniciar.bat }
 ```
 
-O comando recusa porta ocupada, branch diferente de `main`, alteracoes locais de codigo e historico divergente. Busca `origin/main` no repositorio Sonifarma/SonifarmaPrice e aplica apenas fast-forward, sem sobrescrever o historico. Se ja estiver na mesma versao, informa que o codigo esta atualizado.
+Tambem aceita `--source 'C:\Atualizacoes\SonifarmaPrice.zip'`. Uma pasta extraida antiga pode conter versao antiga: prefira o download automatico quando houver acesso a internet. Somente o download do pacote necessita internet; pip pode precisar acesso para dependencias ausentes.
 
-Antes de alterar o codigo, salva os arquivos versionados, `.env` e todos os arquivos de `data`, incluindo arquivos auxiliares SQLite, em ZIP com manifesto SHA-256. Valida a integridade dos bancos SQLite e verifica os hashes do ZIP. `.venv` e `.git` ficam fora do backup. O destino padrao e `BackupsSonifarmaPrice` ao lado da pasta do projeto. Nao ha exclusao automatica de backups. Eles contem credenciais do `.env`: restrinja o acesso ao destino.
+## Backup e verificacao
 
-Dados em `data`, configuracoes e credenciais nao sao recebidos pelo Git. A atualizacao tambem recusa uma versao remota que tente incluir esses arquivos protegidos.
-
-Depois de atualizar o codigo, instala `requirements.txt` no ambiente virtual existente. Nao inicia o painel automaticamente.
-
-3. Execute `iniciar.bat`, abra http://localhost:8770 e valide consultas e importacao. Use Ctrl+F5 no navegador.
-
-## Backup e verificacao separados
-
-Sempre pare o painel antes do backup:
-
-```powershell
-.\SONIFARMA_PRICE_CONTROLE.ps1 backup -Destino 'D:\BackupsSonifarmaPrice'
-.\SONIFARMA_PRICE_CONTROLE.ps1 verify -Arquivo 'D:\BackupsSonifarmaPrice\SonifarmaPrice_DATA.zip'
-```
-
-Se a politica do Windows bloquear PowerShell, solicite a liberacao/assinatura dos scripts ao administrador. Nao e necessario alterar a politica global. Alternativa usando diretamente o Python:
+Destino padrao: `C:\BackupsSonifarmaPrice`. Para outro disco:
 
 ```powershell
 .\.venv\Scripts\python.exe .\manutencao.py update --destination 'D:\BackupsSonifarmaPrice'
+.\.venv\Scripts\python.exe .\manutencao.py backup --destination 'D:\BackupsSonifarmaPrice'
+.\.venv\Scripts\python.exe .\manutencao.py verify --archive 'D:\BackupsSonifarmaPrice\SonifarmaPrice_DATA.zip'
 ```
 
-## Falha ou recuperacao
+Pare o painel antes de backup. ZIP inclui codigo reconhecido, amostras, `.env` e dados de `data`. SQLite usa API de backup para incluir transacoes confirmadas no WAL; cada snapshot e restaurado em pasta temporaria e validado com integrity_check. Manifesto SHA-256 verifica todos os arquivos. Venv e historico Git nao entram. Arquivos fora da lista de codigo e das pastas data/amostras precisam de copia propria.
 
-Se o backup falhar, o codigo nao sera atualizado. Se a instalacao de dependencias falhar depois do Git, o codigo novo ja estara aplicado: mantenha o painel parado, corrija o erro e repita `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` antes de iniciar. O atualizador informa o commit anterior. Nao ha rollback automatico das dependencias.
+Os backups contem credenciais e dados comerciais: restrinja acesso e prefira outro disco. Nao ha exclusao automatica de backups. Destino nao pode ficar dentro da instalacao.
 
-Para recuperar arquivos, verifique o ZIP, extraia-o em outra pasta e compare o conteudo com a instalacao parada antes de copiar. Preserve o estado atual; nao reverta bancos de dados inadvertidamente. O backup nao inclui o historico Git e nao substitui uma copia em outro disco.
+## Falhas e reversao
 
-`ATUALIZAR_V1_1.bat` e o comando antigo para instalar dependencias do pacote ZIP; para baixar versoes do GitHub use `ATUALIZAR_PRICE.bat`.
+Falha de download, validacao ou backup impede a copia de codigo. Falha de copia tenta restaurar apenas arquivos ja tocados e informa explicitamente se a reversao ficar incompleta. Nao ha garantia transacional contra queda de energia.
+
+Se pip falhar, o codigo novo ja foi copiado. Mantenha o painel parado, corrija a falha e execute:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Para reversao manual, pare o painel, preserve o estado atual, verifique o ZIP anterior e extraia em pasta separada. Reponha somente codigo anterior, sem sobrescrever `.env` ou `data`; reinstale dependencias anteriores e valide. Nao ha rollback automatico das dependencias.
+
+O controle `.ps1` continua como opcao para ambientes que permitem scripts assinados. Suporta `-Origem`, `-Destino` e `-Arquivo`, mas nao e necessario para atualizar.
+
+## Primeira adocao desta correcao
+
+Se seu manutencao.py antigo ainda pede Git, baixe apenas o atualizador novo primeiro, preservando a copia anterior. Use o bloco fornecido na entrega desta correcao; depois todas as proximas atualizacoes usam o comando normal. `.env` e dados nao sao envolvidos nessa substituicao inicial.
