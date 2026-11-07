@@ -104,3 +104,13 @@ Para reverter, pare o Price, preserve o estado atual e verifique o backup anteri
 A pedido do usuario, latitude, longitude e raio foram retirados da tela. A pesquisa usa EAN, periodo e grupo e considera observacoes importadas sem restricao geografica; nao presume a localizacao da Sonifarma. A coluna de distancia tambem foi retirada. O filtro geografico fica para uma proxima etapa.
 
 A API existente continua aceitando latitude/longitude juntas para clientes anteriores, mas agora permite omitir ambas. Sem coordenadas retorna filtro_geografico=false, raio_km=null e distancia_km=null. Coordenada isolada e recusada. Dois testes adicionais cobrem a consulta global e a compatibilidade da consulta por raio; o teste de navegador confirma a ausencia dos campos e parametros geograficos.
+
+## Ajuste V1.1.3 — campo EAN ou descricao
+
+A pesquisa de mercado agora aceita EAN ou qualquer trecho da descricao do produto. Descricoes sao consultadas com ILIKE e curingas nas duas extremidades, sem diferenciar maiusculas/minusculas; caracteres % e _ digitados sao tratados literalmente. Nao e pesquisa por similaridade nem por principio ativo.
+
+Sugestoes aparecem apos dois caracteres e uma pausa de 350ms; cada pagina traz 20 produtos e permite carregar mais. EAN completo pode ser consultado diretamente. Ao pesquisar descricao, o operador escolhe explicitamente uma embalagem/EAN antes de comparar os precos. Produtos sem EAN valido ficam sinalizados e nao podem ser selecionados para essa comparacao. Nao ha escolha automatica do primeiro produto, nem mistura de precos entre produtos com nomes semelhantes.
+
+GET /api/mercado/produtos recebe q, limit (1–50) e offset. A busca consulta somente produto/embalagem, sem os agregados de custo/giro da fila de revisao. Valores sao parametrizados; a conexao permanece somente leitura e e fechada. Requisicoes anteriores e resultados de precos sao invalidados ao editar o campo. Datas e grupo continuam disponiveis; coordenadas continuam fora da tela.
+
+Validacao: 25 testes Python aprovados; consulta PostgreSQL embarcada validou correspondencia no meio da descricao, EAN e caracteres literais. O teste de navegador cobre selecao por descricao, mais sugestoes e consulta direta por EAN, alem dos fluxos anteriores. Consulta ao Alpha7 real e execucao Windows permanecem a validar no servidor.
