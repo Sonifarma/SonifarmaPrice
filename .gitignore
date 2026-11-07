@@ -26,3 +26,6 @@ backups/
 *.sqlite3-shm
 *.cred
 *.key
+
+# Rascunhos e referencias locais
+work/
