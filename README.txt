@@ -22,3 +22,8 @@ IMPORTANTE:
 - Antes de ativar acesso de rede para varios usuarios, implementar login e controle de acesso.
 - Instalacao como servico Windows NAO automatizada nesta entrega; validar primeiro em execucao manual.
 - Se o esquema real divergir das amostras, ajustar consulta SQL antes de uso em producao.
+
+ATUALIZACOES PELO GITHUB
+- Consulte OPERACAO_LOCAL.md para migrar a instalacao ZIP para Git.
+- Nas proximas versoes: pare iniciar.bat, execute ATUALIZAR_PRICE.bat e inicie novamente.
+- Backup verificado de codigo, .env e data antes de atualizar.

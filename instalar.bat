@@ -1,5 +1,5 @@
 @echo off
-cd /d C:\SonifarmaPrice
+cd /d "%~dp0"
 where py >nul 2>nul
 if errorlevel 1 (echo Python launcher nao encontrado.& pause& exit /b 1)
 py -3.12 -m venv .venv
