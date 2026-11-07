@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.2.0')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.2.1')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
@@ -79,7 +79,7 @@ def km(lat1,lon1,lat2,lon2):
 @app.get('/api/mercado/status')
 def market_status():
  with localdb() as con: n=con.execute('SELECT COUNT(*) FROM observacoes').fetchone()[0]
- return {'observacoes':n,'coleta_automatica':False,'alteracao_erp':False,'origem':'observacoes locais por CSV; precos dos sites consultados separadamente','consulta_online':True,'fontes_online':['Drogal','Drogaria Sao Paulo']}
+ return {'observacoes':n,'coleta_automatica':False,'alteracao_erp':False,'origem':'observacoes locais por CSV; precos dos sites consultados separadamente','consulta_online':True,'fontes_online':['Drogal','Drogaria Sao Paulo'],'fontes_manuais':['Drogaria Todo Dia']}
 @app.post('/api/mercado/importar')
 async def market_import(arquivo:UploadFile=File(...)):
  # Somente arquivo local e estruturado, sem scraping nem conexão com sites externos.
