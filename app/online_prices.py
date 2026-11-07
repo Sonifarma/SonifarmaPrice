@@ -19,7 +19,10 @@ SOURCES={
  'drogal':{'nome':'Drogal','host':'www.drogal.com.br','nomes':{'DROGAL'},'cnpj_raiz':'54375647','vendedores':{'DROGAL'}},
  'dsp':{'nome':'Drogaria São Paulo','host':'www.drogariasaopaulo.com.br','nomes':{'DROGARIA SAO PAULO'},'cnpj_raiz':'61412110','vendedores':{'DROGARIA SAO PAULO'}},
 }
-AGENT='SonifarmaPrice/1.2.0 (+https://github.com/Sonifarma/SonifarmaPrice)'
+MANUAL_SOURCES={'tododia':{'nome':'Drogaria Todo Dia','host':'www.drogariatododia.com',
+ 'nomes':{'DROGARIA TODO DIA','DROGA TODO DIA','DROGARIA TODODIA'},'cnpj_raiz':'12834185'}}
+
+AGENT='SonifarmaPrice/1.2.1 (+https://github.com/Sonifarma/SonifarmaPrice)'
 log=logging.getLogger(__name__)
 locks={key:threading.Lock() for key in SOURCES}
 last_request={}
@@ -155,6 +158,14 @@ def make_router(path,distance):
    result=query_source(path(),key,body.ean)
    result.update(fonte=key,rede=source['nome'],lojas_no_raio=[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related])
    results.append(result)
+  for key,source in MANUAL_SOURCES.items():
+   related=[store for store in stores if matches(store,source)]
+   if not related:continue
+   supported.update(store['id'] for store in related)
+   results.append({'fonte':key,'rede':source['nome'],'estado':'consulta_manual','ofertas':[],
+    'coletado_em':None,'cache':False,'desatualizado':False,'url_consulta':'https://'+source['host']+'/',
+    'mensagem':'Consulta automatica pendente. O teste de acesso respondeu HTTP 403; abra o site e pesquise o EAN manualmente. Nenhum preco foi coletado desta fonte.',
+    'lojas_no_raio':[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related]})
   return {'ean':body.ean,'centro':center,'raio_km':body.raio,'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
     'aviso':'Precos dos sites das redes com lojas cadastradas no raio. O valor e a disponibilidade na filial fisica nao foram confirmados. Nao inclui frete ou beneficios pessoais; confira as condicoes na fonte. Estes valores nao sao incorporados ao grafico de observacoes locais.'}
  return router

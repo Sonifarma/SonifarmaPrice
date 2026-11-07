@@ -22,3 +22,10 @@ O resultado normalizado é salvo no SQLite local, por fonte e EAN, com cache de 
 No teste real de 07/11/2026 às 14h32 (Brasília), os dois coletores retornaram o EAN 7891058002916, Dorflex 10 comprimidos: R$ 7,29 no catálogo Drogal e R$ 7,49 no catálogo Drogaria São Paulo. Esses valores registram apenas aquele teste e podem mudar; não são dados fixos distribuídos com a aplicação.
 
 Fontes para conferir as ofertas: [Drogal — produto](https://www.drogal.com.br/analgesico-e-relaxante-muscular-dorflex-10-comprimidos/p) e [Drogaria São Paulo — produto](https://www.drogariasaopaulo.com.br/analgesico-dorflex-10-comprimidos/p). As regras podem mudar e novas integrações precisam ser verificadas individualmente.
+
+
+## Drogaria Todo Dia — V1.2.1
+
+O site informado pelo operador é [www.drogariatododia.com](https://www.drogariatododia.com/). Os testes de acesso de 07/11/2026 retornaram HTTP 403, inclusive em robots.txt; não foi validado coletor automático para essa plataforma. Isso não comprova que o site esteja indisponível para o navegador ou servidor do operador.
+
+Quando há uma Todo Dia cadastrada no raio, o painel online apresenta a fonte como **consulta manual**, com link para o site e orientação para pesquisar o EAN. Reconhece Drogaria Todo Dia, Droga Todo Dia, Drogaria Tododia ou a raiz de CNPJ 12.834.185. Não faz requisições automáticas para essa fonte, não importa preços de resultados de buscadores e não apresenta valores sem coleta validada. A integração automática depende de acesso público verificável ou de uma API/feed autorizado da rede. Drogal e Drogaria São Paulo continuam com as consultas automáticas já integradas.
