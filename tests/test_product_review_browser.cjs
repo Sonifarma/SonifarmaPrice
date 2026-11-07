@@ -7,7 +7,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   const page=await browser.newPage({viewport:{width:1500,height:1050}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/api/mercado/comparar?*',route=>{
    const params=new URL(route.request().url()).searchParams;
-   assert.equal(params.has('latitude'),false);assert.equal(params.has('longitude'),false);assert.equal(params.has('raio'),false);
+   assert.equal(params.has('latitude'),false);assert.equal(params.has('longitude'),false);assert.equal(params.get('raio'),'2');assert.equal(params.get('usar_centro'),'true');assert.equal(params.get('centro_versao'),'1');
    return route.fulfill({json:{observacoes:[
    {grupo:'farmacias_redes',estabelecimento:'Rede A',distancia_km:1,preco:12,coletado_em:'2026-11-07',fonte:'Fonte de teste',condicao:'Normal'},
    {grupo:'farmacias_redes',estabelecimento:'Rede B',distancia_km:2,preco:14,coletado_em:'2026-11-07',fonte:'Fonte de teste',condicao:'Normal'},
@@ -28,12 +28,20 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   assert.equal(await page.locator('#rows tr').count(),1);
   assert.match(await page.locator('#rows').innerText(),/Margem abaixo do filtro/);
   await page.locator('#rows button').click();assert.equal(await page.locator('#eanmerc').inputValue(),'4006381333931');
-  assert.equal(await page.locator('#latmerc,#lonmerc,#raiomerc').count(),0);
+  assert.equal(await page.locator('#latmerc,#lonmerc').count(),0);assert.equal(await page.locator('#raiomerc').count(),1);
   await page.locator('#eanmerc').fill('duto A');
   await page.locator('#market-suggestions .product-option').filter({hasText:'Produto A'}).waitFor();
   assert.equal(await page.locator('#eanmerc').getAttribute('pattern'),null);
   await page.locator('#market-suggestions .product-option').filter({hasText:'Produto A'}).click();
   assert.equal(await page.locator('#eanmerc').inputValue(),'4006381333931');
+  await page.locator('#market-search').click();
+  await page.locator('#tab-local').waitFor({state:'visible'});
+  await page.locator('#center-address').fill('Rua demonstrativa, 10, Cidade de teste, Brasil');
+  await page.locator('#center-find').click();
+  await page.locator('input[name=center-candidate]').check();
+  await page.locator('#center-save').click();
+  await page.locator('#center-message').filter({hasText:'Centro salvo'}).waitFor();
+  await page.locator('#center-return').click();
   await page.locator('#market-search').click();
   await page.locator('#marketmsg').filter({hasText:'3 observações'}).waitFor();
   assert.equal(await page.locator('.chart-group').count(),2); // Condicao Clube separada de Normal.

@@ -8,6 +8,7 @@
   const groups = {supermercados:'Supermercados e atacarejos',perfumarias:'Perfumarias',farmacias_redes:'Farmácias de rede',farmacias_independentes:'Farmácias independentes'};
   let entryAvailable = false, current = [], applied = null, offset = 0, hasMore = false, dirty = false;
   let controller, requestId = 0, marketController, marketRequest = 0, marketItems = [];
+  let savedCenter=null, chosenCenter=null, centerLookupId=0, centerController;
   let marketSelection=null, lookupController, lookupId=0, lookupTimer, lookupRows=[], lookupQuery="", lookupMore=false;
   function tab(name) {
     document.querySelectorAll('.tab').forEach(section => {section.hidden = section.id !== 'tab-' + name;});
@@ -115,6 +116,59 @@
     const url=URL.createObjectURL(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));
     const link=document.createElement('a');link.href=url;link.download='SonifarmaPrice_pagina_consultada.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
+  function resetMarket() {
+    marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;
+  }
+  function showCenter() {
+    $('center-current').textContent=savedCenter?savedCenter.endereco:'Nenhum endereço cadastrado.';
+    $('center-map').hidden=!savedCenter;
+    if(savedCenter)$('center-map').href=savedCenter.mapa_url;
+    $('market-center').textContent=savedCenter?'Centro do raio: '+savedCenter.endereco:'Cadastre e confirme o endereço do centro antes de consultar por raio.';
+  }
+  async function loadCenter() {
+    const data=await json('/api/mercado/centro');savedCenter=data.centro;showCenter();
+    if(savedCenter)$('center-address').value=savedCenter.endereco;
+  }
+  $('open-center').addEventListener('click',()=>{tab('local');$('center-address').focus();});
+  $('center-return').addEventListener('click',()=>tab('mercado'));
+  function cancelCenterLookup() {
+    centerController?.abort();centerLookupId++;chosenCenter=null;
+    $('center-candidates').replaceChildren();$('center-save').disabled=true;$('center-find').disabled=false;
+  }
+  $('center-address').addEventListener('input',()=>{cancelCenterLookup();message('center-message','Endereço alterado. Busque e confirme o novo ponto antes de salvar.');});
+  $('center-reload').addEventListener('click',async()=>{
+    cancelCenterLookup();
+    try{await loadCenter();resetMarket();message('center-message','Cadastro recarregado.');}catch(error){message('center-message',error.message,true);}
+  });
+  const configHeaders=()=>({'Content-Type':'application/json','X-Price-Config':'1'});
+  $('center-form').addEventListener('submit',async event=>{
+    event.preventDefault();cancelCenterLookup();centerController=new AbortController();const token=++centerLookupId;
+    $('center-find').disabled=true;message('center-message','Buscando endereço…');
+    try{
+      const data=await json('/api/mercado/centro/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({endereco:$('center-address').value.trim()}),signal:centerController.signal});
+      if(token!==centerLookupId)return;
+      data.candidatos.forEach(candidate=>{
+        const label=document.createElement('label');label.className='center-option';
+        const radio=document.createElement('input');radio.type='radio';radio.name='center-candidate';radio.value=candidate.candidato_id;
+        const address=document.createElement('span');address.textContent=candidate.endereco;
+        const precision=document.createElement('small');precision.className='muted';precision.style.display='block';precision.textContent=['house','building','entrance','house_number'].includes(candidate.tipo)?'Ponto de endereço/edificação — confira no mapa.':'Ponto aproximado de rua ou região — confira no mapa.';address.append(precision);
+        const map=document.createElement('a');map.href=candidate.mapa_url;map.textContent='Conferir no mapa';map.target='_blank';map.rel='noopener';
+        radio.addEventListener('change',()=>{chosenCenter=candidate;$('center-save').disabled=false;});
+        label.append(radio,address,map);$('center-candidates').append(label);
+      });
+      message('center-message',data.candidatos.length?'Selecione e confira o ponto encontrado; depois confirme e salve.':'Nenhum endereço encontrado. Inclua número, bairro, cidade, estado e país.');
+    }catch(error){if(error.name!=='AbortError'&&token===centerLookupId)message('center-message',error.message,true);}
+    finally{if(token===centerLookupId)$('center-find').disabled=false;}
+  });
+  $('center-save').addEventListener('click',async()=>{
+    if(!chosenCenter)return;
+    const candidate=chosenCenter,token=centerLookupId;$('center-save').disabled=true;
+    try{
+      const data=await json('/api/mercado/centro',{method:'PUT',headers:configHeaders(),body:JSON.stringify({candidato_id:candidate.candidato_id,versao:savedCenter?.versao||0})});
+      savedCenter=data.centro;showCenter();resetMarket();
+      if(token===centerLookupId){$('center-address').value=savedCenter.endereco;cancelCenterLookup();message('center-message','Centro salvo. O raio será aplicado a partir deste endereço.');}
+    }catch(error){message('center-message',error.message,true);if(token===centerLookupId)$('center-save').disabled=false;}
+  });
   function closeSuggestions() {
     clearTimeout(lookupTimer);lookupController?.abort();lookupId++;
     $('market-suggestions').hidden=true;$('eanmerc').setAttribute('aria-expanded','false');
@@ -171,8 +225,8 @@
   function renderMarket() {
     const items=marketItems.filter(r=>!$('market-group').value||r.grupo===$('market-group').value);
     $('marketrows').replaceChildren();$('market-chart').replaceChildren();
-    if(!items.length) {empty($('marketrows'),'Nenhuma observação neste filtro.',6);$('market-chart').textContent='Consulte um EAN para visualizar as observações.';return;}
-    items.forEach(item=>{const row=document.createElement('tr');[groups[item.grupo]||item.grupo,item.estabelecimento,money(item.preco),dateBR(item.coletado_em),item.condicao,item.fonte].forEach(text=>cell(row,text));$('marketrows').append(row);});
+    if(!items.length) {empty($('marketrows'),'Nenhuma observação neste filtro.',7);$('market-chart').textContent='Consulte um EAN para visualizar as observações.';return;}
+    items.forEach(item=>{const row=document.createElement('tr');[groups[item.grupo]||item.grupo,item.estabelecimento,number(item.distancia_km)+' km',money(item.preco),dateBR(item.coletado_em),item.condicao,item.fonte].forEach(text=>cell(row,text));$('marketrows').append(row);});
     const summaries=new Map();
     items.forEach(item=>{if(!present(item.preco)||Number(item.preco)<=0)return;const key=JSON.stringify([item.grupo,item.condicao||'Sem condição informada']);if(!summaries.has(key))summaries.set(key,[]);summaries.get(key).push(Number(item.preco));});
     const maximum=items.reduce((max,item)=>present(item.preco)?Math.max(max,Number(item.preco)):max,0);
@@ -188,7 +242,7 @@
     });
     if(summaries.size>12){const note=document.createElement('p');note.textContent='Gráfico limitado aos primeiros 12 grupos/condições. A tabela mantém todas as observações.';$('market-chart').append(note);}
   }
-  ['eanmerc','market-days'].forEach(id=>$(id).addEventListener('input',()=>{
+  ['eanmerc','market-days','raiomerc'].forEach(id=>$(id).addEventListener('input',()=>{
     marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;
     if(id==='eanmerc')$('selected-product').textContent='Consultar produto';
     message('marketmsg','Filtros alterados. Consulte para carregar as observações.');
@@ -202,10 +256,11 @@
       if(await lookupProducts(query))message('marketmsg','Selecione o produto encontrado para consultar os preços pelo EAN correto.');
       return;
     }
+    if(!savedCenter){message('marketmsg','Cadastre o endereço do centro para consultar por raio.',true);tab('local');$('center-address').focus();return;}
     closeSuggestions();marketController?.abort();marketController=new AbortController();const token=++marketRequest;
-    const params=new URLSearchParams({ean,dias:$('market-days').value});
+    const params=new URLSearchParams({ean,dias:$('market-days').value,raio:$('raiomerc').value,usar_centro:'true',centro_versao:String(savedCenter.versao)});
     message('marketmsg','Consultando observações importadas…');$('market-search').disabled=true;
-    try {const data=await json('/api/mercado/comparar?'+params,{signal:marketController.signal});if(token!==marketRequest)return;marketItems=data.observacoes;renderMarket();message('marketmsg',marketItems.length+' observações encontradas, sem restrição geográfica. '+data.aviso);}
+    try {const data=await json('/api/mercado/comparar?'+params,{signal:marketController.signal});if(token!==marketRequest)return;marketItems=data.observacoes;renderMarket();message('marketmsg',marketItems.length+' observações no raio de '+number(params.get('raio'))+' km. '+data.aviso);}
     catch(error){if(error.name!=='AbortError'&&token===marketRequest){marketItems=[];renderMarket();message('marketmsg',error.message,true);}}
     finally{if(token===marketRequest)$('market-search').disabled=false;}
   });
@@ -220,6 +275,7 @@
     json('/api/status').then(data=>{$('mode').textContent=data.mode==='demo'?'DEMONSTRAÇÃO':'ALPHA7 · SOMENTE LEITURA';}).catch(()=>{$('mode').textContent='Conexão indisponível';});
     try{const data=await json('/api/revisao/opcoes');entryAvailable=data.ultima_entrada_disponivel;message('entry-note',data.mensagem);}
     catch(error){message('entry-note','Não foi possível validar a data de entrada. '+error.message,true);}
+    try{await loadCenter();}catch(error){message('market-center','Não foi possível carregar o centro. '+error.message,true);}
     $('period').disabled=!entryAvailable;periodFields();renderMarket();load(parameters());
   }
   start();
