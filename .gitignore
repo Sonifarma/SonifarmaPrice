@@ -26,3 +26,10 @@ backups/
 *.sqlite3-shm
 *.cred
 *.key
+
+# Exportacoes comerciais e material confidencial
+exports/
+exportacoes/
+*.pem
+*.pfx
+*.p12

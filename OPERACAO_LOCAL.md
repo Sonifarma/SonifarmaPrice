@@ -66,3 +66,25 @@ Se o backup falhar, o codigo nao sera atualizado. Se a instalacao de dependencia
 Para recuperar arquivos, verifique o ZIP, extraia-o em outra pasta e compare o conteudo com a instalacao parada antes de copiar. Preserve o estado atual; nao reverta bancos de dados inadvertidamente. O backup nao inclui o historico Git e nao substitui uma copia em outro disco.
 
 `ATUALIZAR_V1_1.bat` e o comando antigo para instalar dependencias do pacote ZIP; para baixar versoes do GitHub use `ATUALIZAR_PRICE.bat`.
+
+## Adocao da V1.2
+
+A V1.2 e entregue em branch/PR. O comando padrao atualiza apenas `main`; somente recebe esta versao depois de integrar o PR. Nao aplique a branch diretamente na instalacao em producao.
+
+Com o painel parado e o PR integrado:
+
+```powershell
+cd C:\SonifarmaPrice
+.\ATUALIZAR_PRICE.bat
+```
+
+Se a atualizacao concluir, gere um token no proprio servidor:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(32))"
+notepad .env
+```
+
+Acrescente `PRICE_ADMIN_TOKEN=SEU_TOKEN_GERADO` ao `.env`, preservando MODE e todas as variaveis A7 existentes. Nao cole o token no chat ou no GitHub. Nao reutilize senha do PostgreSQL. Inicie com `iniciar.bat`; na tela nova, informe o token e coordenadas verificadas. Nenhuma coordenada foi inventada nesta entrega. Se nao configurar token, as funcoes V1.1 continuam disponiveis e a descoberta permanece desabilitada.
+
+Para reverter o codigo da V1.2, pare o painel, preserve uma copia da instalacao atual e valide o ZIP criado antes da atualizacao com `SONIFARMA_PRICE_CONTROLE.ps1 verify -Arquivo ...`. Extraia esse ZIP em uma pasta separada. Reponha somente os arquivos de codigo da versao anterior (pastas `app` e `static`, `requirements.txt`, scripts e documentacao) a partir da copia verificada; nao copie `.env` ou `data` sobre os arquivos atuais. Reinstale o requirements anterior e valide o painel. Tabelas SQLite novas podem permanecer: o codigo V1.1 nao as utiliza. Dependencias nao possuem rollback automatico. Se a instalacao ficar com alteracoes Git locais, revise-as antes da proxima atualizacao; o atualizador as bloqueia para evitar sobrescrita silenciosa.
