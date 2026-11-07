@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.0')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.1')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
@@ -115,3 +115,7 @@ def market_compare(ean:str=Query(...,min_length=8,max_length=14),latitude:float=
   if dist<=raio:itens.append({'grupo':g,'estabelecimento':n,'distancia_km':round(dist,2),'preco':p,'coletado_em':d,'fonte':f,'condicao':cond})
  itens.sort(key=lambda x:x['preco'])
  return {'ean':ean,'raio_km':raio,'observacoes':itens,'menor_preco':itens[0]['preco'] if itens else None,'aviso':'Dados importados, não verificados automaticamente. Preços condicionados não devem gerar ajustes automáticos.'}
+
+# Consulta incremental, sem alterar os endpoints V1.1 existentes.
+from app.product_review import make_router
+app.include_router(make_router(lambda: db(), lambda: demo_rows(), SQL, lambda: mode()))

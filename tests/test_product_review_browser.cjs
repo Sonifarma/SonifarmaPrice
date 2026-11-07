@@ -1,0 +1,64 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+(async()=>{
+ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+ try {
+  const page=await browser.newPage({viewport:{width:1500,height:1050}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/api/mercado/comparar?*',route=>route.fulfill({json:{observacoes:[
+   {grupo:'farmacias_redes',estabelecimento:'Rede A',distancia_km:1,preco:12,coletado_em:'2026-11-07',fonte:'Fonte de teste',condicao:'Normal'},
+   {grupo:'farmacias_redes',estabelecimento:'Rede B',distancia_km:2,preco:14,coletado_em:'2026-11-07',fonte:'Fonte de teste',condicao:'Normal'},
+   {grupo:'farmacias_redes',estabelecimento:'Rede C',distancia_km:1.2,preco:9,coletado_em:'2026-11-07',fonte:'Fonte de teste',condicao:'Clube'},
+  ],aviso:'Observações fictícias para teste.'}}));
+  await page.goto(process.env.TEST_URL||'http://127.0.0.1:18770');
+  await page.locator('#shown').filter({hasText:'100'}).waitFor();
+  assert.equal(await page.locator('#only-review').isChecked(),true);
+  assert.equal(await page.locator('#total').innerText(),'113');
+  assert.equal(await page.locator('#rows tr').count(),100);
+  assert.equal(await page.locator('#rows img').count(),0);
+  await page.screenshot({path:'work/consulta-crm-desktop.png',fullPage:true});
+  const downloadPromise=page.waitForEvent('download');await page.locator('#export').click();const download=await downloadPromise;
+  const csv=await fs.readFile(await download.path(),'utf8');assert.match(csv,/'=HYPERLINK/);
+  await page.locator('#next').click();await page.locator('#shown').filter({hasText:'13'}).waitFor();
+  assert.match(await page.locator('#page-label').innerText(),/101–113/);
+  await page.locator('#q').fill('Produto A');await page.locator('#search').click();await page.locator('#shown').filter({hasText:/^1$/}).waitFor();
+  assert.equal(await page.locator('#rows tr').count(),1);
+  assert.match(await page.locator('#rows').innerText(),/Margem abaixo do filtro/);
+  await page.locator('#rows button').click();assert.equal(await page.locator('#eanmerc').inputValue(),'4006381333931');
+  await page.locator('#latmerc').fill('0');await page.locator('#lonmerc').fill('0');await page.locator('#market-search').click();
+  await page.locator('#marketmsg').filter({hasText:'3 observações'}).waitFor();
+  assert.equal(await page.locator('.chart-group').count(),2); // Condicao Clube separada de Normal.
+  assert.equal(await page.locator('#marketrows tr').count(),3);
+  await page.screenshot({path:'work/mercado-crm-desktop.png',fullPage:true});
+  await page.locator('[data-tab=importacao]').click();
+  const csvFile='ean;grupo;estabelecimento;latitude;longitude;preco;coletado_em;fonte;condicao\n4006381333931;supermercados;Teste;0;0;12.90;2026-11-07;fixture;Normal\n';
+  await page.locator('#arquivo').setInputFiles({name:'teste.csv',mimeType:'text/csv',buffer:Buffer.from(csvFile)});
+  await page.locator('#import-button').click();await page.locator('#importmsg').filter({hasText:'1 registros importados'}).waitFor();
+  await page.locator('[data-tab=produtos]').click();await page.locator('#clear').click();
+  await page.locator('#shown').filter({hasText:'100'}).waitFor();
+  await page.locator('#only-review').uncheck();await page.locator('#period-filter summary').click();
+  await page.locator('#period').selectOption('intervalo');
+  await page.locator('#date-start').fill('2026-11-06');await page.locator('#date-end').fill('2026-11-06');
+  await page.locator('#period-done').click();await page.locator('#search').click();
+  await page.locator('#shown').filter({hasText:/^1$/}).waitFor();
+  assert.match(await page.locator('#rows').innerText(),/Produto B/);
+  assert.match(await page.locator('#rows').innerText(),/06\/11\/2026/);
+  await page.locator('#period-filter summary').click();await page.locator('#period').selectOption('intervalo');
+  await page.locator('#date-start').fill('2026-11-08');await page.locator('#date-end').fill('2026-11-07');await page.locator('#period-done').click();
+  assert.equal(await page.locator('#date-end').evaluate(e=>e.validity.valid),false);
+  await page.locator('#period-filter summary').click();
+  await page.locator('#clear').click();await page.locator('#shown').filter({hasText:'100'}).waitFor();
+  await page.locator('#q').fill('<img');await page.locator('#search').click();await page.locator('#shown').filter({hasText:/^1$/}).waitFor();
+  assert.equal(await page.locator('#rows img').count(),0);assert.match(await page.locator('#rows').innerText(),/<img/);
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.locator('#search').isVisible());
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));
+  await page.screenshot({path:'work/consulta-crm-mobile.png',fullPage:true});
+  await page.route('**/api/revisao/opcoes',route=>route.fulfill({json:{ultima_entrada_disponivel:false,mensagem:'Data real da última entrada ainda não mapeada.'}}));
+  await page.reload();await page.locator('#shown').filter({hasText:'100'}).waitFor();
+  await page.locator('#period-filter summary').click();assert.equal(await page.locator('#period').isDisabled(),true);
+  assert.match(await page.locator('#entry-note').innerText(),/não mapeada/);
+  assert.deepEqual(errors,[]);
+  console.log('Browser OK: tema CRM, fila, paginacao, EAN, grafico por condicao, datas, CSV protegido, HTML escapado e mobile.');
+ } finally {await browser.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});
