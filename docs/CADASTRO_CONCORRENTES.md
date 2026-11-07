@@ -53,3 +53,8 @@ O botão Buscar lojas e sites no raio passa a complementar o cadastro. Enquanto 
 O grupo pode ser preenchido diretamente em qualquer uma das telas: selecione uma das quatro categorias, informe o motivo e pressione Confirmar grupo. A alteração é persistida no cadastro e na regra de classificação das futuras buscas em uma única transação, com auditoria. As duas telas mostram o grupo salvo, inclusive com a fonte online indisponível. Identificadores inexistentes não criam classificações avulsas.
 
 Validação: testes de falha da fonte com cadastro existente; equivalência entre o resultado da busca e o cadastro persistente; atualização de grupo sem rede e preservação em nova consulta; navegador com edição pela aba Concorrentes e busca online indisponível mantendo as lojas e o grupo confirmado.
+
+
+## Motivo opcional — V1.1.9
+
+Para confirmar o grupo, basta selecionar a categoria e clicar em Confirmar grupo. O motivo da classificação é opcional nas duas telas e na API; a auditoria da alteração permanece registrada.

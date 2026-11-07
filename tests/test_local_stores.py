@@ -55,7 +55,7 @@ class StoreApiTests(unittest.TestCase):
         response=self.search();self.assertEqual(response.status_code,200,response.text)
         self.assertEqual(len(response.json()['lojas']),3)
         self.assertFalse(response.json()['cache'])
-        response=self.client.put('/api/mercado/lojas/way/2/grupo',headers=self.headers,json={'grupo':'farmacias_independentes','motivo':'Conferido pelo operador'})
+        response=self.client.put('/api/mercado/lojas/way/2/grupo',headers=self.headers,json={'grupo':'farmacias_independentes'})
         self.assertEqual(response.status_code,200)
         with patch.object(local_stores,'overpass',side_effect=AssertionError('cache nao deve acessar rede')):
             cached=self.search().json()
@@ -105,7 +105,7 @@ class StoreApiTests(unittest.TestCase):
     def test_group_can_be_changed_offline_and_survives_source_refresh(self):
         self.search()
         with patch.object(local_stores,'overpass',side_effect=AssertionError('Edicao local nao deve consultar rede')):
-            response=self.client.put('/api/mercado/lojas/way/2/grupo',headers=self.headers,json={'grupo':'farmacias_redes','motivo':'Filial conferida no cadastro'})
+            response=self.client.put('/api/mercado/lojas/way/2/grupo',headers=self.headers,json={'grupo':'farmacias_redes','motivo':''})
             self.assertEqual(response.status_code,200,response.text)
             directory=self.client.get('/api/concorrentes?raio=2&centro_versao=1').json()
         self.assertEqual(next(r for r in directory['items'] if r['fonte_id']=='way/2')['grupo'],'farmacias_redes')
