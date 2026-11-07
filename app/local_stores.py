@@ -132,10 +132,10 @@ def make_router(path,distance):
             result=json.loads(cached['resultado'])
             for row in result['lojas']:
                 if row['fonte_id'] in corrections:row.update(grupo=corrections[row['fonte_id']],grupo_confirmado=True,revisao_necessaria=False)
-            from app.competitors import register,enrich_pending
+            from app.competitors import register,enrich_pending,within_radius
             stats=register(path(),result['lojas'],result['consultado_em'])
             background_tasks.add_task(enrich_pending,path(),{row['fonte_id'] for row in result['lojas']})
-            return dict(result,cache=True,cadastro=stats)
+            return dict(result,lojas=within_radius(path(),center,body.raio,distance),cache=True,cadastro=stats,fallback=False)
         if not lock.acquire(blocking=False):raise HTTPException(429,'Busca de lojas em andamento. Aguarde.',headers={'Retry-After':'60'})
         try:
             if time.monotonic()-last_search<60:raise HTTPException(429,'Aguarde um minuto antes de outra busca online.',headers={'Retry-After':'60'})
@@ -146,15 +146,22 @@ def make_router(path,distance):
                 log.exception('Falha na fonte de lojas no raio')
                 with database(path()) as con:
                     con.execute('INSERT INTO lojas_buscas(criado_em,centro_versao,raio,estado,resultado) VALUES(?,?,?,?,?)',(now(),center['versao'],body.raio,'falha',json.dumps({'mensagem':'Fonte indisponivel ou resposta incompleta.'})))
-                raise HTTPException(502,'Fonte de lojas indisponivel ou incompleta. Tente mais tarde ou reduza o raio.') from exc
+                from app.competitors import within_radius,apply_identified
+                apply_identified(path())
+                saved=within_radius(path(),center,body.raio,distance)
+                if saved:
+                    return {'lojas':saved,'centro':center,'raio_km':body.raio,'consultado_em':None,'cache':False,'fallback':True,
+                            'cadastro':{'adicionados':0,'atualizados':0},
+                            'aviso':'Fonte online indisponivel. Exibindo o mesmo cadastro salvo da aba Concorrentes, dentro do raio atual; nenhuma atualizacao online foi concluida.'}
+                raise HTTPException(502,'Fonte de lojas indisponivel e nenhum concorrente salvo neste raio. Tente mais tarde.') from exc
             result={'lojas':rows,'centro':center,'raio_km':body.raio,'consultado_em':now(),'cache':False,
                     'aviso':'Sites declarados no OpenStreetMap. Nao comprova funcionamento, produto, estoque ou preco da filial. © colaboradores OSM (ODbL).'}
             with database(path()) as con:
                 con.execute('INSERT INTO lojas_buscas(criado_em,centro_versao,raio,estado,resultado) VALUES(?,?,?,?,?)',(result['consultado_em'],center['versao'],body.raio,'concluido',json.dumps(result)))
-            from app.competitors import register,enrich_pending
+            from app.competitors import register,enrich_pending,within_radius
             result['cadastro']=register(path(),rows,result['consultado_em'])
             background_tasks.add_task(enrich_pending,path(),{row['fonte_id'] for row in rows})
-            return result
+            return dict(result,lojas=within_radius(path(),center,body.raio,distance),fallback=False)
         finally:lock.release()
 
     @router.put('/{tipo}/{identificador}/grupo')
@@ -162,12 +169,8 @@ def make_router(path,distance):
         mutation(request,x_price_config)
         if tipo not in {'node','way','relation'} or identificador<=0 or body.grupo not in GROUPS or len(body.motivo.strip())<3:raise HTTPException(422,'Grupo ou identificador invalido.')
         key=f'{tipo}/{identificador}'
-        with database(path()) as con:
-            before=con.execute('SELECT * FROM lojas_grupos WHERE fonte_id=?',(key,)).fetchone()
-            con.execute('INSERT INTO lojas_grupos VALUES(?,?,?,?) ON CONFLICT(fonte_id) DO UPDATE SET grupo=excluded.grupo,motivo=excluded.motivo,atualizado_em=excluded.atualizado_em',(key,body.grupo,body.motivo,now()))
-            con.execute('INSERT INTO lojas_auditoria(fonte_id,antes,depois,criado_em) VALUES(?,?,?,?)',(key,json.dumps(dict(before) if before else {}),json.dumps({'grupo':body.grupo,'motivo':body.motivo}),now()))
         from app.competitors import set_group
-        set_group(path(),key,body.grupo)
+        set_group(path(),key,body.grupo,body.motivo.strip())
         return {'fonte_id':key,'grupo':body.grupo}
 
     return router

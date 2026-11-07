@@ -8,11 +8,12 @@
   const groups = {supermercados:'Supermercados e atacarejos',perfumarias:'Perfumarias',farmacias_redes:'Farmácias de rede',farmacias_independentes:'Farmácias independentes'};
   let entryAvailable = false, current = [], applied = null, offset = 0, hasMore = false, dirty = false;
   let controller, requestId = 0, marketController, marketRequest = 0, marketItems = [];
-  let detailController,detailId=0,activeProduct=null,storesController,storesId=0;
+  let detailController,detailId=0,activeProduct=null,storesController,storesId=0,storesOffset=0;
   let savedCenter=null, chosenCenter=null, centerLookupId=0, centerController;
   let marketSelection=null, lookupController, lookupId=0, lookupTimer, lookupRows=[], lookupQuery="", lookupMore=false;
   function tab(name) {
     if(name==='concorrentes')loadCompetitors();
+    if(name==='mercado')loadSavedStores();
     document.querySelectorAll('.tab').forEach(section => {section.hidden = section.id !== 'tab-' + name;});
     document.querySelectorAll('.nav').forEach(button => {
       const active = button.dataset.tab === name;button.classList.toggle('active', active);
@@ -120,7 +121,7 @@
     const link=document.createElement('a');link.href=url;link.download='SonifarmaPrice_pagina_consultada.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   function resetMarket() {
-    marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;clearStores('Centro recarregado. Busque as lojas no raio atual.');
+    marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;clearStores('Centro recarregado. Carregando os concorrentes cadastrados no raio atual.');loadSavedStores();
   }
   function showCenter() {
     $('center-current').textContent=savedCenter?savedCenter.endereco:'Nenhum endereço cadastrado.';
@@ -300,33 +301,79 @@
       message('detail-market-message',`Centro: ${savedCenter.endereco} · Raio: ${params.get('raio')} km. `+comparison.aviso);
     }catch(error){if(error.name!=='AbortError'&&token===detailId)message(activeProduct?'detail-market-message':'detail-message',error.message,true);}
   }
-  function clearStores(text='Busque as lojas para listar os sites disponíveis no raio.') {
-    storesController?.abort();storesId++;empty($('stores-rows'),text,6);$('stores-search').disabled=false;message('stores-message',text);
+  function clearStores(text='Carregue os concorrentes cadastrados ou busque novas lojas no raio.') {
+    storesController?.abort();storesId++;storesOffset=0;empty($('stores-rows'),text,6);$('stores-search').disabled=false;message('stores-message',text);
+    $('stores-previous').disabled=true;$('stores-next').disabled=true;$('stores-page').textContent='';
+  }
+  function groupLabel(row,store,withDistance=false) {
+    row.dataset.storeSource=store.fonte_id;row.dataset.storeDistance=withDistance?number(store.distancia_km)+' km':'';
+    const label=document.createElement('span');label.dataset.role='store-group';label.textContent=(groups[store.grupo]||'Grupo pendente')+(withDistance?' · '+row.dataset.storeDistance:'');
+    return label;
+  }
+  function groupControls(container,store,messageId) {
+    const select=document.createElement('select');select.setAttribute('aria-label','Grupo de '+store.nome);select.add(new Option('Selecione o grupo',''));Object.entries(groups).forEach(([key,label])=>select.add(new Option(label,key)));select.value=store.grupo||'';
+    const reason=document.createElement('input');reason.placeholder='Motivo da classificação';reason.maxLength=300;reason.setAttribute('aria-label','Motivo da classificação de '+store.nome);
+    const save=document.createElement('button');save.type='button';save.className='small-btn';save.textContent='Confirmar grupo';
+    save.addEventListener('click',async()=>{
+      if(!select.value||reason.value.trim().length<3){message(messageId,'Selecione o grupo e informe o motivo da classificação.',true);return;}
+      save.disabled=true;
+      try {
+        const data=await json('/api/mercado/lojas/'+store.fonte_id+'/grupo',{method:'PUT',headers:configHeaders(),body:JSON.stringify({grupo:select.value,motivo:reason.value.trim()})});
+        store.grupo=data.grupo;
+        document.querySelectorAll('tr[data-store-source]').forEach(row=>{
+          if(row.dataset.storeSource!==store.fonte_id)return;
+          row.querySelector('[data-role=store-group]').textContent=groups[data.grupo]+(row.dataset.storeDistance?' · '+row.dataset.storeDistance:'');
+          row.querySelector('select').value=data.grupo;
+        });
+        message(messageId,'Grupo confirmado no cadastro compartilhado de concorrentes.');
+      }catch(error){message(messageId,error.message,true);}finally{save.disabled=false;}
+    });
+    const controls=document.createElement('div');controls.className='store-review';controls.append(select,reason,save);container.append(controls);
   }
   function renderStores(rows) {
-    $('stores-rows').replaceChildren();if(!rows.length){empty($('stores-rows'),'Nenhum cadastro encontrado neste raio. A fonte pode ter cobertura incompleta.',6);return;}
+    $('stores-rows').replaceChildren();if(!rows.length){empty($('stores-rows'),'Nenhum concorrente cadastrado neste raio. Busque novas lojas para complementar o cadastro.',6);return;}
     rows.forEach(store=>{
-      const row=document.createElement('tr');cell(row,store.nome);cell(row,groups[store.grupo]||(store.revisao_necessaria?'Farmácia — confirmar rede/independente':'Não classificado'));cell(row,number(store.distancia_km)+' km');
+      const row=document.createElement('tr');cell(row,store.nome);cell(row,'').append(groupLabel(row,store));cell(row,number(store.distancia_km)+' km');
       const site=cell(row,'');
       if(store.site){const link=document.createElement('a');link.href=store.site;link.textContent=new URL(store.site).hostname;link.target='_blank';link.rel='noopener noreferrer';site.append(link);}else site.textContent='Site não informado';
       const source=cell(row,'');const link=document.createElement('a');link.href=store.fonte_url;link.textContent='Cadastro OSM';link.target='_blank';link.rel='noopener noreferrer';source.append(link);
-      const controls=cell(row,'');controls.className='store-review';const select=document.createElement('select');select.setAttribute('aria-label','Grupo de '+store.nome);select.add(new Option('Selecione o grupo',''));Object.entries(groups).forEach(([key,label])=>select.add(new Option(label,key)));select.value=store.grupo||'';
-      const reason=document.createElement('input');reason.placeholder='Motivo da classificação';reason.maxLength=300;reason.setAttribute('aria-label','Motivo da classificação de '+store.nome);
-      const save=document.createElement('button');save.type='button';save.className='small-btn';save.textContent='Confirmar grupo';
-      save.addEventListener('click',async()=>{
-        if(!select.value||reason.value.trim().length<3){message('stores-message','Selecione o grupo e informe o motivo da classificação.',true);return;}
-        save.disabled=true;try{const data=await json('/api/mercado/lojas/'+store.fonte_id+'/grupo',{method:'PUT',headers:configHeaders(),body:JSON.stringify({grupo:select.value,motivo:reason.value.trim()})});store.grupo=data.grupo;row.cells[1].textContent=groups[data.grupo];message('stores-message','Grupo confirmado e registrado no Price.');}catch(error){message('stores-message',error.message,true);}finally{save.disabled=false;}
-      });controls.append(select,reason,save);$('stores-rows').append(row);
+      groupControls(cell(row,''),store,'stores-message');$('stores-rows').append(row);
     });
+  }
+  async function loadSavedStores(offset=0,notice='',warning=false) {
+    if(!savedCenter){clearStores('Cadastre o centro para consultar os concorrentes no raio.');return false;}
+    const radius=Number($('raiomerc').value);
+    if(!Number.isFinite(radius)||radius<0.5||radius>50){clearStores('Informe um raio entre 0,5 e 50 km.');return false;}
+    storesController?.abort();storesController=new AbortController();const token=++storesId;
+    message('stores-message','Carregando o cadastro compartilhado de concorrentes…');
+    try {
+      const data=await json('/api/concorrentes?'+new URLSearchParams({raio:radius,centro_versao:savedCenter.versao,limit:100,offset}),{signal:storesController.signal});
+      if(token!==storesId)return false;
+      storesOffset=offset;renderStores(data.items);$('stores-previous').disabled=offset===0;$('stores-next').disabled=!data.has_more;
+      $('stores-page').textContent=data.total?`${offset+1}–${offset+data.items.length} de ${data.total} concorrentes`:'Nenhum concorrente no filtro';
+      message('stores-message',(notice?notice+' ':'')+`${data.total} concorrentes no cadastro compartilhado · raio ${radius} km · ${data.centro.endereco}.`,warning);
+      return true;
+    }catch(error){if(error.name!=='AbortError'&&token===storesId){clearStores('Cadastro não carregado.');message('stores-message',error.message,true);}return false;}
   }
   async function findStores() {
     if(!savedCenter){message('stores-message','Cadastre o centro antes de buscar lojas.',true);tab('local');$('center-address').focus();return;}
-    const radius=Number($('raiomerc').value);if(!Number.isFinite(radius)||radius<0.5||radius>50){message('stores-message','Informe um raio entre 0,5 e 50 km.',true);return;}
-    storesController?.abort();storesController=new AbortController();const token=++storesId;$('stores-search').disabled=true;empty($('stores-rows'),'Buscando cadastros de estabelecimentos…',6);message('stores-message','Consultando fonte pública; a busca pode levar até 30 segundos.');
-    try{const data=await json('/api/mercado/lojas/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({raio:radius,centro_versao:savedCenter.versao}),signal:storesController.signal});if(token!==storesId)return;renderStores(data.lojas);message('stores-message',`${data.lojas.length} cadastros no raio de ${data.raio_km} km · ${data.cache?'resultado em cache':'consulta online'} · Centro: ${data.centro.endereco}. `+data.aviso+` Cadastro: ${data.cadastro.adicionados} novos, ${data.cadastro.atualizados} atualizados. Consulte a aba Concorrentes.`);}
-    catch(error){if(error.name!=='AbortError'&&token===storesId){empty($('stores-rows'),'Busca não concluída; tente novamente mais tarde.',6);message('stores-message',error.message,true);}}
-    finally{if(token===storesId)$('stores-search').disabled=false;}
+    const radius=Number($('raiomerc').value),version=savedCenter.versao;
+    if(!Number.isFinite(radius)||radius<0.5||radius>50){message('stores-message','Informe um raio entre 0,5 e 50 km.',true);return;}
+    if(!await loadSavedStores())return;
+    if(savedCenter?.versao!==version||Number($('raiomerc').value)!==radius)return;
+    storesController?.abort();storesController=new AbortController();const token=++storesId;$('stores-search').disabled=true;
+    message('stores-message','Buscando atualizações online; os concorrentes já cadastrados continuam disponíveis. A busca pode levar até 30 segundos.');
+    try {
+      const data=await json('/api/mercado/lojas/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({raio:radius,centro_versao:version}),signal:storesController.signal});
+      if(token!==storesId)return;
+      await loadSavedStores(0,data.fallback?data.aviso:`${data.lojas.length} cadastros no raio. Busca ${data.cache?'em cache':'online'} concluída. ${data.cadastro.adicionados} novos e ${data.cadastro.atualizados} atualizados.`,Boolean(data.fallback));
+    }catch(error){if(error.name!=='AbortError'&&token===storesId)await loadSavedStores(0,'A busca online não foi concluída: '+error.message+' Exibindo o cadastro salvo.',true);}
+    finally{$('stores-search').disabled=false;}
   }
+  $('stores-saved').addEventListener('click',()=>loadSavedStores());
+  $('stores-open-directory').addEventListener('click',()=>tab('concorrentes'));
+  $('stores-previous').addEventListener('click',()=>loadSavedStores(Math.max(0,storesOffset-100)));
+  $('stores-next').addEventListener('click',()=>loadSavedStores(storesOffset+100));
   let competitorOffset=0,competitorRequest=0;
   async function loadCompetitors() {
     const token=++competitorRequest;
@@ -340,7 +387,7 @@
       $('competitors-rows').replaceChildren();
       if(!data.items.length)empty($('competitors-rows'),'Nenhum concorrente salvo neste filtro. Busque novas lojas no raio.',4);
       data.items.forEach(store=>{
-        const row=document.createElement('tr');cell(row,store.nome+' — '+store.endereco);cell(row,(groups[store.grupo]||'Grupo pendente')+' · '+number(store.distancia_km)+' km');
+        const row=document.createElement('tr');cell(row,store.nome+' — '+store.endereco);const group=cell(row,'');group.append(groupLabel(row,store,true));groupControls(group,store,'competitors-message');
         const links=cell(row,'');
         for(const [url,label] of [[store.site,'Site declarado'],[store.fonte_url,'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';links.append(a,document.createElement('br'));}
         const details=cell(row,'');const text=document.createElement('p');

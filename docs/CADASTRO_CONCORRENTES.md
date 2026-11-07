@@ -43,3 +43,13 @@ Os dados cadastrais foram consultados individualmente na BrasilAPI e o endereço
 Foram mantidos pendentes os quatro registros enviados sem identificação suficiente: Mercadona; Drogaria São Paulo; Droga Raia; Todo Dia da Avenida Brasil. Na Avenida Brasil há mais de uma filial Todo Dia identificada no cadastro público; não foi escolhido um CNPJ somente pelo nome da rede. Para concluir esses casos, conferir o número da fachada ou um documento da loja e o ponto no mapa. A pendência cadastral não impede a pesquisa de mercado por produto nem a importação de observações.
 
 Exemplos de conferência: [Assaí — endereço oficial](https://www.assai.com.br/loja/assai-santa-barbara-do-oeste), [Tenda — endereços das ofertas](https://www.tendaatacado.com.br/institucional/nossas-ofertas), [São Vicente — lojas](https://www.svicente.com.br/lojas/), [Pavan — rede publicada pela Prefeitura de Tietê](https://www.tiete.sp.gov.br/public/admin/globalarq/uploads/files/rede_credenciada_mes_pdf_202601121768220972.pdf). O CNPJ da matriz publicado no rodapé de um site de rede não deve substituir o CNPJ da filial.
+
+## Cadastro compartilhado e edição de grupos — V1.1.8
+
+Pesquisa de mercado → Lojas e sites dentro do raio e a aba Concorrentes consultam o mesmo cadastro local, com o mesmo centro e raio. A primeira tela carrega os registros salvos ao abrir, sem exigir nova consulta ao OpenStreetMap. Ambas paginam até 100 lojas por página; o filtro textual da aba Concorrentes restringe essa exibição.
+
+O botão Buscar lojas e sites no raio passa a complementar o cadastro. Enquanto a busca está em andamento, os registros salvos permanecem visíveis. Em caso de indisponibilidade, o sistema informa que não houve atualização online e mantém a lista salva no raio atual. Uma busca posterior que retorne menos lojas não exclui automaticamente as anteriores. As advertências de cobertura, atualização e disponibilidade de ofertas continuam válidas.
+
+O grupo pode ser preenchido diretamente em qualquer uma das telas: selecione uma das quatro categorias, informe o motivo e pressione Confirmar grupo. A alteração é persistida no cadastro e na regra de classificação das futuras buscas em uma única transação, com auditoria. As duas telas mostram o grupo salvo, inclusive com a fonte online indisponível. Identificadores inexistentes não criam classificações avulsas.
+
+Validação: testes de falha da fonte com cadastro existente; equivalência entre o resultado da busca e o cadastro persistente; atualização de grupo sem rede e preservação em nova consulta; navegador com edição pela aba Concorrentes e busca online indisponível mantendo as lojas e o grupo confirmado.
