@@ -26,3 +26,6 @@ backups/
 *.sqlite3-shm
 *.cred
 *.key
+
+# Laboratorio e downloads temporarios
+work/

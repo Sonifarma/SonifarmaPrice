@@ -1,0 +1,9 @@
+# Apenas laboratorio; nao incluir no requirements de producao.
+price-parser==0.5.1
+extruct==0.18.0
+python-stdnum==2.2
+APScheduler==3.11.3
+osmnx==2.1.1
+openpyxl==3.1.5
+xlrd==2.0.2
+SQLAlchemy==2.1.8
