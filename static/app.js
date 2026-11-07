@@ -12,6 +12,7 @@
   let savedCenter=null, chosenCenter=null, centerLookupId=0, centerController;
   let marketSelection=null, lookupController, lookupId=0, lookupTimer, lookupRows=[], lookupQuery="", lookupMore=false;
   function tab(name) {
+    if(name==='concorrentes')loadCompetitors();
     document.querySelectorAll('.tab').forEach(section => {section.hidden = section.id !== 'tab-' + name;});
     document.querySelectorAll('.nav').forEach(button => {
       const active = button.dataset.tab === name;button.classList.toggle('active', active);
@@ -322,10 +323,43 @@
     if(!savedCenter){message('stores-message','Cadastre o centro antes de buscar lojas.',true);tab('local');$('center-address').focus();return;}
     const radius=Number($('raiomerc').value);if(!Number.isFinite(radius)||radius<0.5||radius>50){message('stores-message','Informe um raio entre 0,5 e 50 km.',true);return;}
     storesController?.abort();storesController=new AbortController();const token=++storesId;$('stores-search').disabled=true;empty($('stores-rows'),'Buscando cadastros de estabelecimentos…',6);message('stores-message','Consultando fonte pública; a busca pode levar até 30 segundos.');
-    try{const data=await json('/api/mercado/lojas/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({raio:radius,centro_versao:savedCenter.versao}),signal:storesController.signal});if(token!==storesId)return;renderStores(data.lojas);message('stores-message',`${data.lojas.length} cadastros no raio de ${data.raio_km} km · ${data.cache?'resultado em cache':'consulta online'} · Centro: ${data.centro.endereco}. `+data.aviso);}
+    try{const data=await json('/api/mercado/lojas/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({raio:radius,centro_versao:savedCenter.versao}),signal:storesController.signal});if(token!==storesId)return;renderStores(data.lojas);message('stores-message',`${data.lojas.length} cadastros no raio de ${data.raio_km} km · ${data.cache?'resultado em cache':'consulta online'} · Centro: ${data.centro.endereco}. `+data.aviso+` Cadastro: ${data.cadastro.adicionados} novos, ${data.cadastro.atualizados} atualizados. Consulte a aba Concorrentes.`);}
     catch(error){if(error.name!=='AbortError'&&token===storesId){empty($('stores-rows'),'Busca não concluída; tente novamente mais tarde.',6);message('stores-message',error.message,true);}}
     finally{if(token===storesId)$('stores-search').disabled=false;}
   }
+  let competitorOffset=0,competitorRequest=0;
+  async function loadCompetitors() {
+    const token=++competitorRequest;
+    if(!savedCenter){empty($('competitors-rows'),'Cadastre o centro da pesquisa para consultar concorrentes.',4);message('competitors-message','Centro ainda não cadastrado.');return;}
+    const radius=Number($('raiomerc').value);
+    if(!Number.isFinite(radius)||radius<0.5||radius>50){message('competitors-message','Informe um raio entre 0,5 e 50 km na pesquisa de mercado.',true);return;}
+    message('competitors-message','Carregando cadastro salvo…');
+    try {
+      const data=await json('/api/concorrentes?'+new URLSearchParams({raio:radius,centro_versao:savedCenter.versao,q:$('competitors-q').value,offset:competitorOffset,limit:100}));
+      if(token!==competitorRequest)return;
+      $('competitors-rows').replaceChildren();
+      if(!data.items.length)empty($('competitors-rows'),'Nenhum concorrente salvo neste filtro. Busque novas lojas no raio.',4);
+      data.items.forEach(store=>{
+        const row=document.createElement('tr');cell(row,store.nome+' — '+store.endereco);cell(row,(groups[store.grupo]||'Grupo pendente')+' · '+number(store.distancia_km)+' km');
+        const links=cell(row,'');
+        for(const [url,label] of [[store.site,'Site declarado'],[store.fonte_url,'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';links.append(a,document.createElement('br'));}
+        const details=cell(row,'');const text=document.createElement('p');
+        const info=store.dados_cnpj;
+        text.textContent=info?`${info.razao_social||''} · ${info.descricao_situacao_cadastral||''} · CNAE ${info.cnae_fiscal||''}: ${info.cnae_fiscal_descricao||''}. Consulta: ${dateBR(info.consultado_em)}. Confira o vínculo com esta filial.`:'CNPJ ainda não consultado. Informe somente o CNPJ identificado desta filial.';
+        if(store.cnpj_status==='falha_consulta')text.textContent+=' A última tentativa falhou; os dados anteriores foram preservados.';
+        const input=document.createElement('input');input.value=store.cnpj||'';input.maxLength=30;input.placeholder='CNPJ desta filial';input.setAttribute('aria-label','CNPJ de '+store.nome);
+        const button=document.createElement('button');button.type='button';button.textContent='Consultar CNPJ';
+        button.addEventListener('click',async()=>{button.disabled=true;try{const result=await json('/api/concorrentes/'+store.id+'/cnpj',{method:'POST',headers:configHeaders(),body:JSON.stringify({cnpj:input.value})});await loadCompetitors();message('competitors-message',result.mensagem);}catch(error){message('competitors-message',error.message,true);}finally{button.disabled=false;}});
+        details.append(text,input,button);$('competitors-rows').append(row);
+      });
+      $('competitors-previous').disabled=competitorOffset===0;$('competitors-next').disabled=!data.has_more;
+      message('competitors-message',`${data.total} concorrentes salvos no filtro · raio ${radius} km · ${data.centro.endereco}. Exibidos ${data.items.length}.`);
+    }catch(error){if(token===competitorRequest){empty($('competitors-rows'),'Cadastro não carregado.',4);message('competitors-message',error.message,true);}}
+  }
+  $('competitors-form').addEventListener('submit',event=>{event.preventDefault();competitorOffset=0;loadCompetitors();});
+  $('competitors-previous').addEventListener('click',()=>{competitorOffset=Math.max(0,competitorOffset-100);loadCompetitors();});
+  $('competitors-next').addEventListener('click',()=>{competitorOffset+=100;loadCompetitors();});
+  $('competitors-discover').addEventListener('click',()=>{tab('mercado');findStores();$('stores-panel').scrollIntoView({behavior:'smooth'});});
   $('stores-search').addEventListener('click',findStores);
   $('detail-stores').addEventListener('click',()=>{const product=activeProduct;if(product)chooseMarketProduct(product);$('product-dialog').close();tab('mercado');findStores();$('stores-panel').scrollIntoView({behavior:'smooth',block:'start'});});
   $('import-form').addEventListener('submit',async event=>{

@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.5')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.6')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
@@ -140,3 +140,6 @@ from app.market_products import make_detail_router
 app.include_router(make_detail_router(lambda: db(), lambda: demo_rows(), lambda: mode()))
 from app.local_stores import make_router as make_local_stores_router
 app.include_router(make_local_stores_router(lambda: LOCAL_DB, km))
+
+from app.competitors import make_router as make_competitors_router
+app.include_router(make_competitors_router(lambda: LOCAL_DB, km))
