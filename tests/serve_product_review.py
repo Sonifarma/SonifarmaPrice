@@ -8,7 +8,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ['MODE'] = 'demo'
-from app import main
+from app import main, search_center
 import uvicorn
 
 
@@ -22,6 +22,8 @@ def run():
     rows[4]['descricao'] = '=HYPERLINK("https://example.invalid")'
     rows[5]['descricao'] = 'Produto <img src=x onerror=alert(1)>'
     main.demo_rows = lambda: rows
+    # Geocodificador ficticio: o teste de navegador nao acessa servico externo.
+    search_center.geocode = lambda address: [{'endereco':'Rua demonstrativa, 10, Cidade de teste, Brasil','latitude':0.0,'longitude':0.0,'tipo':'house'}]
     with tempfile.TemporaryDirectory() as directory:
         main.LOCAL_DB = Path(directory) / 'mercado.sqlite3'
         uvicorn.run(main.app, host='127.0.0.1', port=18770)

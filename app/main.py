@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.3')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.4')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
@@ -105,7 +105,15 @@ async def market_import(arquivo:UploadFile=File(...)):
   con.executemany('INSERT INTO observacoes(ean,grupo,estabelecimento,latitude,longitude,preco,coletado_em,fonte,condicao) VALUES(?,?,?,?,?,?,?,?,?)',valid)
  return {'importados':len(valid),'mensagem':'Importação concluída no banco local; Alpha7 não alterado.'}
 @app.get('/api/mercado/comparar')
-def market_compare(ean:str=Query(...,min_length=8,max_length=14),latitude:float|None=Query(None,ge=-90,le=90),longitude:float|None=Query(None,ge=-180,le=180),raio:float=Query(2,ge=0.5,le=50),dias:int=Query(7,ge=1,le=90)):
+def market_compare(ean:str=Query(...,min_length=8,max_length=14),latitude:float|None=Query(None,ge=-90,le=90),longitude:float|None=Query(None,ge=-180,le=180),raio:float=Query(2,ge=0.5,le=50),dias:int=Query(7,ge=1,le=90),usar_centro:bool=False,centro_versao:int|None=Query(None,ge=1)):
+ centro=None
+ if usar_centro:
+  if latitude is not None or longitude is not None:raise HTTPException(422,'Use o centro cadastrado ou coordenadas explicitas, nunca ambos.')
+  from app.search_center import get_center
+  centro=get_center(LOCAL_DB)
+  if centro is None:raise HTTPException(422,'Cadastre e confirme o endereco do centro da pesquisa antes de consultar por raio.')
+  if centro_versao is not None and centro_versao!=centro['versao']:raise HTTPException(409,'O centro da pesquisa foi alterado. Recarregue o cadastro e consulte novamente.')
+  latitude,longitude=centro['latitude'],centro['longitude']
  if (latitude is None)!=(longitude is None):raise HTTPException(422,'Informe latitude e longitude juntas ou omita ambas.')
  geografico=latitude is not None
  limite=(datetime.now().date()-timedelta(days=dias)).isoformat()
@@ -116,7 +124,7 @@ def market_compare(ean:str=Query(...,min_length=8,max_length=14),latitude:float|
   dist=km(latitude,longitude,lat,lon) if geografico else None
   if not geografico or dist<=raio:itens.append({'grupo':g,'estabelecimento':n,'distancia_km':round(dist,2) if dist is not None else None,'preco':p,'coletado_em':d,'fonte':f,'condicao':cond})
  itens.sort(key=lambda x:x['preco'])
- return {'ean':ean,'raio_km':raio if geografico else None,'filtro_geografico':geografico,'observacoes':itens,'menor_preco':itens[0]['preco'] if itens else None,'aviso':'Dados importados, não verificados automaticamente. Preços condicionados não devem gerar ajustes automáticos.'}
+ return {'ean':ean,'raio_km':raio if geografico else None,'filtro_geografico':geografico,'centro':centro,'observacoes':itens,'menor_preco':itens[0]['preco'] if itens else None,'aviso':'Dados importados, não verificados automaticamente. Preços condicionados não devem gerar ajustes automáticos.'}
 
 # Consulta incremental, sem alterar os endpoints V1.1 existentes.
 from app.product_review import make_router
@@ -124,3 +132,6 @@ app.include_router(make_router(lambda: db(), lambda: demo_rows(), SQL, lambda: m
 
 from app.market_products import make_router as make_market_products_router
 app.include_router(make_market_products_router(lambda: db(), lambda: demo_rows(), lambda: mode()))
+
+from app.search_center import make_router as make_search_center_router
+app.include_router(make_search_center_router(lambda: LOCAL_DB))

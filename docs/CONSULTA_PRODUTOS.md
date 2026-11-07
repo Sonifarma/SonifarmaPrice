@@ -114,3 +114,50 @@ Sugestoes aparecem apos dois caracteres e uma pausa de 350ms; cada pagina traz 2
 GET /api/mercado/produtos recebe q, limit (1–50) e offset. A busca consulta somente produto/embalagem, sem os agregados de custo/giro da fila de revisao. Valores sao parametrizados; a conexao permanece somente leitura e e fechada. Requisicoes anteriores e resultados de precos sao invalidados ao editar o campo. Datas e grupo continuam disponiveis; coordenadas continuam fora da tela.
 
 Validacao: 25 testes Python aprovados; consulta PostgreSQL embarcada validou correspondencia no meio da descricao, EAN e caracteres literais. O teste de navegador cobre selecao por descricao, mais sugestoes e consulta direta por EAN, alem dos fluxos anteriores. Consulta ao Alpha7 real e execucao Windows permanecem a validar no servidor.
+
+## Ajuste V1.1.4 — raio com centro cadastrado por endereco
+
+O raio foi restaurado na Pesquisa de mercado, separado do cadastro de localizacao. Latitude e longitude continuam fora dos filtros. A consulta de produtos do ERP nao e filtrada por distancia: o raio se aplica aos estabelecimentos das observacoes de mercado.
+
+### Uso
+
+1. Abra **Centro da pesquisa** no menu, ou **Cadastrar ou alterar endereco do centro** na pesquisa de mercado.
+2. Digite rua, numero, bairro, cidade, estado e pais. Clique em **Buscar endereco**.
+3. Confira os candidatos e o link **Conferir no mapa**. Selecione o ponto desejado e clique em **Confirmar e salvar centro**.
+4. Volte a Pesquisa de mercado, selecione produto/EAN e informe **Raio em linha reta (km)** (padrao 2; permitido 0,5–50).
+
+Sem centro cadastrado, a interface encaminha para o cadastro antes da consulta; nao executa uma pesquisa global silenciosamente. Editar o endereco nao muda o centro ativo ate confirmar e salvar. A configuracao e compartilhada pelos usuarios da instalacao e persiste no servidor, nao apenas no navegador. Se outra tela modificar o centro, a versao impede salvar ou pesquisar usando uma revisao desatualizada.
+
+### Fonte e precisao
+
+Geocodificacao pelo endpoint HTTPS fixo `https://nominatim.openstreetmap.org/search`, com User-Agent identificavel, busca manual, limite de uma requisicao por segundo por processo, uma requisicao em andamento, timeout 20s, maximo cinco candidatos e 1 MB de resposta. Cache de candidatos por 24h. Nao e autocomplete externo: somente o clique em Buscar endereco consulta a fonte. Use o worker unico do comando iniciar.bat. Politica: https://operations.osmfoundation.org/policies/nominatim/ ; dados com atribuicao OpenStreetMap/ODbL na tela.
+
+O endereco digitado e enviado ao servico para localizar o ponto. Nenhum preco, custo ou dado do Alpha7 e enviado. Coordenadas vem da resposta da fonte, com validacao de tipo, finitude e limites; nunca sao estimadas no codigo. O servidor emite o identificador de cada candidato e somente permite salvar um candidato retornado, ainda valido e confirmado pelo operador.
+
+Um resultado pode representar rua ou regiao, sem localizar o numero. A tela informa isso e oferece o mapa para conferencia. **No teste real com Rua Iacanga, 1016, Americana/SP, o servico retornou duas referencias de rua, sem confirmar o numero. Nenhum centro foi salvo por padrao.** Nao afirmar precisao de porta ou distancia por trajeto; o raio mede linha reta a partir do ponto confirmado.
+
+Se a fonte falhar ou nao encontrar endereco, o centro existente permanece intacto. Nao ha contorno de bloqueios ou repeticao automatica de chamadas. A qualidade/cobertura do servico precisa ser conferida no endereco escolhido.
+
+### Persistencia e API
+
+Tabelas SQLite novas, aditivas, em `data/mercado.sqlite3`:
+
+- centro_candidatos: resultados temporarios da busca, com origem/endereco/ponto/data.
+- centro_pesquisa: centro ativo, coordenadas internas, versao e data de alteracao.
+- centro_auditoria: estado anterior e posterior de cada confirmacao.
+
+A tabela observacoes permanece intacta; nao ha escrita no Alpha7. Os backups existentes incluem automaticamente as tabelas novas. Endpoints novos:
+
+- GET `/api/mercado/centro`: centro ativo ou null.
+- POST `/api/mercado/centro/buscar`: endereco completo; retorna candidatos com ID e mapa.
+- PUT `/api/mercado/centro`: candidato_id e versao conhecida; exige confirmacao explicita pelo botao da tela.
+
+POST/PUT usam JSON, header X-Price-Config:1 e verificacao de Origin quando presente para impedir formularios de outro site. Isso nao substitui autenticacao por usuario: a instalacao continua dependendo da rede interna protegida e o historico registra a alteracao sem identificar uma conta individual.
+
+GET `/api/mercado/comparar` aceita `usar_centro=true`, `centro_versao` e `raio`. O servidor resolve o ponto salvo, calcula a distancia de cada observacao e retorna somente as inclusas. Centro ausente retorna 422; versao diferente retorna 409; nao permite combinar centro salvo com coordenadas explicitas no mesmo pedido. Clientes anteriores com latitude/longitude ou sem filtro geografico permanecem compativeis; a nova tela sempre utiliza o centro cadastrado.
+
+### Verificacao e recuperacao
+
+30 testes Python aprovados, incluindo persistencia/confirmacao, cache/limite de chamadas, indisponibilidade da fonte preservando centro anterior, origem das alteracoes, versao concorrente e inclusao/exclusao efetiva por raio. Playwright aprovado para cadastro com provedor ficticio, confirmacao, retorno a pesquisa e consulta sem coordenadas digitadas. Consulta real ao Nominatim respondeu, com a limitacao de precisao relatada acima. Windows e endereco definitivo seguem sujeitos a verificacao local.
+
+Atualize pelo procedimento normal, com Price parado, e use Ctrl+F5. O atualizador cria backup verificado antes de substituir codigo. Para reverter a interface, preserve o estado atual e reponha somente os arquivos de codigo do backup anterior; nao sobrescreva .env/data. Tabelas novas podem permanecer, pois versoes anteriores nao as utilizam.
