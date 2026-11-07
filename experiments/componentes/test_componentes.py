@@ -12,6 +12,8 @@ from stdnum import ean
 import extruct
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from sqlalchemy import event
+from sqlalchemy.pool import NullPool
 from apscheduler.triggers.cron import CronTrigger
 import networkx as nx
 import osmnx as ox
@@ -102,23 +104,48 @@ class SchedulerTests(unittest.TestCase):
 
     def test_sqlite_persists_job_between_scheduler_instances(self):
         with tempfile.TemporaryDirectory() as tmp:
-            url = 'sqlite:///' + str(Path(tmp) / 'jobs.sqlite3')
-            scheduler = BackgroundScheduler(jobstores={'default': SQLAlchemyJobStore(url=url)})
-            scheduler.start(paused=True)
+            path = Path(tmp) / 'jobs.sqlite3'
+            url = 'sqlite:///' + str(path)
+            active_connections = set()
+
+            def make_store():
+                # SQLite de teste: cada uso fecha a conexao em vez de mante-la no pool.
+                store = SQLAlchemyJobStore(url=url, engine_options={'poolclass': NullPool})
+                event.listen(store.engine, 'connect', lambda conn, record: active_connections.add(id(conn)))
+                event.listen(store.engine, 'close', lambda conn, record: active_connections.discard(id(conn)))
+                return store
+
+            def stop(scheduler, store):
+                try:
+                    if scheduler.running:
+                        scheduler.shutdown(wait=True)  # Tambem aguarda a thread do BackgroundScheduler.
+                finally:
+                    # Dispose depois do join: a thread pode consultar o jobstore ao despertar.
+                    store.engine.dispose()
+
+            first_store = make_store()
+            scheduler = BackgroundScheduler(jobstores={'default': first_store})
             try:
+                scheduler.start(paused=True)
                 scheduler.add_job(print, 'date', run_date=datetime(2030, 1, 1, tzinfo=timezone.utc),
                                   id='teste-persistencia', args=['job ficticio'], max_instances=1)
             finally:
-                scheduler.shutdown()
-            restarted = BackgroundScheduler(jobstores={'default': SQLAlchemyJobStore(url=url)})
-            restarted.start(paused=True)
+                stop(scheduler, first_store)
+            self.assertFalse(active_connections, 'Conexao SQLite ficou aberta apos primeiro shutdown')
+
+            second_store = make_store()
+            restarted = BackgroundScheduler(jobstores={'default': second_store})
             try:
+                restarted.start(paused=True)
                 job = restarted.get_job('teste-persistencia')
                 self.assertIsNotNone(job)
                 self.assertEqual(job.args, ('job ficticio',))
                 self.assertEqual(job.max_instances, 1)
             finally:
-                restarted.shutdown()
+                stop(restarted, second_store)
+            self.assertFalse(active_connections, 'Conexao SQLite ficou aberta apos segundo shutdown')
+            # No Windows, renomear tambem confirma liberacao do arquivo antes da limpeza.
+            path.rename(Path(tmp) / 'jobs_fechado.sqlite3')
 
 
 class GeographyTests(unittest.TestCase):

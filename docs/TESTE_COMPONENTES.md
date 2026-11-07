@@ -102,3 +102,11 @@ $codigo = (Get-ChildItem "$teste\codigo" -Directory | Select-Object -First 1).Fu
 ## Proximo passo recomendado
 
 Validacao de EAN e importador CMED em modulo separado, com testes de duplicidade e tratamento das notas. Em seguida, integrar extracao JSON-LD de uma fonte autorizada identificada, mantendo precos online separados dos confirmados por filial. Agendamento entra apos validar o conector; OSMnx e opcional para trajetos.
+
+## Correcao apos o primeiro ensaio no Windows
+
+O usuario executou os 20 testes no Windows/Python 3.12 e o teste de persistencia falhou ao remover o diretorio temporario: WinError 32 em jobs.sqlite3, seguido de WinError 267 na tentativa de limpeza. O traceback aponta para a limpeza, apos as verificacoes funcionais; nao houve alteracao de bancos do Price.
+
+O teste foi corrigido para usar NullPool no jobstore SQLite e fechar explicitamente os engines depois de shutdown(wait=True), que aguarda a thread do agendador. Eventos SQLAlchemy verificam que nao restam conexoes abertas em cada etapa. O arquivo e renomeado antes da limpeza, exercitando tambem a liberacao no Windows. Nenhuma excecao de limpeza e ocultada e a verificacao de persistencia entre duas instancias foi mantida.
+
+Os 20 testes passaram novamente no Linux. A confirmacao da correcao no Windows depende da repeticao pelo usuario; o erro anterior continua registrado como resultado real do primeiro ensaio.
