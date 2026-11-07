@@ -75,7 +75,7 @@
       button.addEventListener('click',()=>{
         marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;
         $('eanmerc').value=item.ean;$('selected-product').textContent=item.descricao;
-        message('marketmsg','Informe as coordenadas e consulte as observações deste EAN.');tab('mercado');$('latmerc').focus();
+        message('marketmsg','Consulte as observações importadas deste EAN.');tab('mercado');$('market-search').focus();
       });cell(row,'').append(button);$('rows').append(row);
     });
   }
@@ -119,8 +119,8 @@
   function renderMarket() {
     const items=marketItems.filter(r=>!$('market-group').value||r.grupo===$('market-group').value);
     $('marketrows').replaceChildren();$('market-chart').replaceChildren();
-    if(!items.length) {empty($('marketrows'),'Nenhuma observação neste filtro.',7);$('market-chart').textContent='Consulte um EAN para visualizar as observações.';return;}
-    items.forEach(item=>{const row=document.createElement('tr');[groups[item.grupo]||item.grupo,item.estabelecimento,number(item.distancia_km)+' km',money(item.preco),dateBR(item.coletado_em),item.condicao,item.fonte].forEach(text=>cell(row,text));$('marketrows').append(row);});
+    if(!items.length) {empty($('marketrows'),'Nenhuma observação neste filtro.',6);$('market-chart').textContent='Consulte um EAN para visualizar as observações.';return;}
+    items.forEach(item=>{const row=document.createElement('tr');[groups[item.grupo]||item.grupo,item.estabelecimento,money(item.preco),dateBR(item.coletado_em),item.condicao,item.fonte].forEach(text=>cell(row,text));$('marketrows').append(row);});
     const summaries=new Map();
     items.forEach(item=>{if(!present(item.preco)||Number(item.preco)<=0)return;const key=JSON.stringify([item.grupo,item.condicao||'Sem condição informada']);if(!summaries.has(key))summaries.set(key,[]);summaries.get(key).push(Number(item.preco));});
     const maximum=items.reduce((max,item)=>present(item.preco)?Math.max(max,Number(item.preco)):max,0);
@@ -136,7 +136,7 @@
     });
     if(summaries.size>12){const note=document.createElement('p');note.textContent='Gráfico limitado aos primeiros 12 grupos/condições. A tabela mantém todas as observações.';$('market-chart').append(note);}
   }
-  ['eanmerc','latmerc','lonmerc','raiomerc','market-days'].forEach(id=>$(id).addEventListener('input',()=>{
+  ['eanmerc','market-days'].forEach(id=>$(id).addEventListener('input',()=>{
     marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;
     if(id==='eanmerc')$('selected-product').textContent='Consultar produto';
     message('marketmsg','Filtros alterados. Consulte para carregar as observações.');
@@ -144,9 +144,9 @@
   $('market-group').addEventListener('change',renderMarket);
   $('market-form').addEventListener('submit',async event=>{
     event.preventDefault();marketController?.abort();marketController=new AbortController();const token=++marketRequest;
-    const params=new URLSearchParams({ean:$('eanmerc').value,latitude:$('latmerc').value,longitude:$('lonmerc').value,raio:$('raiomerc').value,dias:$('market-days').value});
+    const params=new URLSearchParams({ean:$('eanmerc').value,dias:$('market-days').value});
     message('marketmsg','Consultando observações importadas…');$('market-search').disabled=true;
-    try {const data=await json('/api/mercado/comparar?'+params,{signal:marketController.signal});if(token!==marketRequest)return;marketItems=data.observacoes;renderMarket();message('marketmsg',marketItems.length+' observações encontradas no raio. '+data.aviso);}
+    try {const data=await json('/api/mercado/comparar?'+params,{signal:marketController.signal});if(token!==marketRequest)return;marketItems=data.observacoes;renderMarket();message('marketmsg',marketItems.length+' observações encontradas, sem restrição geográfica. '+data.aviso);}
     catch(error){if(error.name!=='AbortError'&&token===marketRequest){marketItems=[];renderMarket();message('marketmsg',error.message,true);}}
     finally{if(token===marketRequest)$('market-search').disabled=false;}
   });

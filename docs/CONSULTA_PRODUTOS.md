@@ -98,3 +98,9 @@ if ($LASTEXITCODE -eq 0) { .\iniciar.bat }
 Depois use Ctrl+F5 no navegador. O atualizador sem Git copia os novos `.py`, `.js`, `.css`, `.png` e documentacao permitidos, preserva `.env`, dados e venv, e cria backup verificado. Configure o mapeamento de entrada somente depois de validar o diagnostico; nao altera a configuracao existente.
 
 Para reverter, pare o Price, preserve o estado atual e verifique o backup anterior com `manutencao.py verify --archive CAMINHO`. Extraia em outra pasta e reponha somente codigo anterior, sem sobrescrever `.env` e `data`. Nao ha migracao de banco local nesta entrega. A dependencia nova `tzdata` suporta fuso horario no Windows e pode permanecer instalada. Nenhum outro sistema precisa ser interrompido.
+
+## Ajuste V1.1.2 — pesquisa sem coordenadas
+
+A pedido do usuario, latitude, longitude e raio foram retirados da tela. A pesquisa usa EAN, periodo e grupo e considera observacoes importadas sem restricao geografica; nao presume a localizacao da Sonifarma. A coluna de distancia tambem foi retirada. O filtro geografico fica para uma proxima etapa.
+
+A API existente continua aceitando latitude/longitude juntas para clientes anteriores, mas agora permite omitir ambas. Sem coordenadas retorna filtro_geografico=false, raio_km=null e distancia_km=null. Coordenada isolada e recusada. Dois testes adicionais cobrem a consulta global e a compatibilidade da consulta por raio; o teste de navegador confirma a ausencia dos campos e parametros geograficos.
