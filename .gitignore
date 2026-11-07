@@ -1,0 +1,17 @@
+# Configuracoes locais e credenciais
+.env
+.env.*
+!.env.exemplo
+!.env.example
+
+# Ambientes e caches Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Logs e arquivos do sistema
+*.log
+.DS_Store
+Thumbs.db

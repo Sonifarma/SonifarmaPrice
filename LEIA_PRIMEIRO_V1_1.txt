@@ -1,0 +1,13 @@
+SONIFARMA PRICE INTELLIGENCE V1.1
+
+1. Pare o iniciar.bat com Ctrl+C.
+2. Faca backup integral de C:\SonifarmaPrice, incluindo .env e data.
+3. Extraia este ZIP sobre C:\SonifarmaPrice, substituindo arquivos do aplicativo. NAO substitua seu .env.
+4. Execute ATUALIZAR_V1_1.bat para instalar python-multipart.
+5. Execute iniciar.bat e abra http://localhost:8770.
+
+NOVIDADES: Importacao CSV de observacoes de preco; filtros EAN, coordenadas, raio; grupos supermercados, perfumarias, farmacias_redes e farmacias_independentes; banco SQLite local em data\mercado.sqlite3.
+
+IMPORTANTE: V1.1 NAO coleta precos automaticamente da internet, NAO altera precos no Alpha7, NAO gera caderno de ofertas. Coordenadas de referencia precisam ser informadas; nao inferimos endereco automaticamente. CSV precisa ter EAN, grupo, estabelecimento, latitude, longitude, preco, coletado_em (AAAA-MM-DD), fonte e condicao.
+
+SEGURANCA: interface de importacao nao tem autenticacao; mantenha porta 8770 restrita a rede confiavel. Proxima etapa: login/permissoes, fontes autorizadas e validacao de ofertas.
