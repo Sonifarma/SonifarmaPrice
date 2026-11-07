@@ -20,7 +20,7 @@ class CompetitorsTests(unittest.TestCase):
         for value in ['00000000000000','00000000000192','<script>',None]:self.assertIsNone(c.normalize_cnpj(value))
 
     def test_idempotence_radius_and_confirmed_group_survive_refresh(self):
-        self.assertEqual(c.register(self.path,self.rows,c.now()),{'adicionados':0,'atualizados':0})
+        self.assertEqual(c.register(self.path,self.rows,c.now()),{'adicionados':0,'atualizados':0,'cnpjs_identificados':0})
         c.set_group(self.path,'way/2','farmacias_redes')
         c.register(self.path,self.rows,c.now())
         result=c.within_radius(self.path,{'latitude':0,'longitude':0},.25,main.km)
@@ -64,3 +64,64 @@ class CompetitorsTests(unittest.TestCase):
                 self.assertEqual(client.get('/api/concorrentes?raio=2&centro_versao=1&limit=1').json()['total'],3)
                 self.assertEqual(client.get('/api/concorrentes?raio=2&centro_versao=2').status_code,409)
                 self.assertEqual(client.post('/api/concorrentes/1/cnpj',json={'cnpj':'00000000000191'}).status_code,403)
+
+class IdentifiedBranchesTests(unittest.TestCase):
+    def setUp(self):
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        self.path=Path(tmp.name)/'db.sqlite3'
+
+    def test_researched_list_validates_branch_payloads_and_existing_user_rows(self):
+        from app.identified_competitors import IDENTIFIED
+        self.assertEqual(len(IDENTIFIED),11)
+        rows=[]
+        for i,entry in enumerate(IDENTIFIED):
+            self.assertEqual(c.normalize_cnpj(entry['cnpj']),entry['cnpj'])
+            self.assertEqual(entry['dados']['cnpj'],entry['cnpj'])
+            self.assertEqual(entry['dados']['numero'],entry['numero'])
+            self.assertIn(entry['rua'],c.normalized(entry['dados']['logradouro']))
+            self.assertNotIn('qsa',entry['dados'])
+            rows.append({'fonte_id':entry['fonte_id'] or 'node/'+str(200+i),'nome':entry['nomes'][0],
+                         'latitude':-22.753,'longitude':-47.36,'endereco':'Rua '+entry['rua']+' '+entry['numero'],'grupo':None,'site':None})
+        result=c.register(self.path,rows,c.now())
+        self.assertEqual(result['cnpjs_identificados'],11)
+        self.assertEqual(c.apply_identified(self.path),0)
+        with c.database(self.path) as con:
+            self.assertEqual(con.execute('SELECT count(*) FROM concorrentes_cadastro WHERE dados_cnpj IS NOT NULL').fetchone()[0],11)
+            self.assertEqual(con.execute("SELECT count(*) FROM concorrentes_auditoria WHERE acao='filial_identificada_por_endereco'").fetchone()[0],11)
+
+    def test_missing_number_requires_reviewed_source_id_and_wrong_branch_never_matches(self):
+        from app.identified_competitors import IDENTIFIED
+        entry=next(e for e in IDENTIFIED if e['cnpj']=='03476811029214')
+        row={'fonte_id':entry['fonte_id'],'nome':'Dia','endereco':'Rua Iacanga','latitude':-22.753,'longitude':-47.36}
+        self.assertTrue(c.identified_match(row,entry))
+        self.assertFalse(c.identified_match(dict(row,fonte_id='way/999'),entry))
+        self.assertFalse(c.identified_match(dict(row,nome='Outra loja'),entry))
+        self.assertFalse(c.identified_match(dict(row,latitude=0),entry))
+        drogal=IDENTIFIED[0]
+        base=dict(row,nome='Drogal',endereco='Rua Iacanga 1786')
+        self.assertFalse(c.identified_match(base,drogal))
+        self.assertFalse(c.identified_match(dict(base,endereco='Rua Limeira 786'),drogal))
+        self.assertFalse(c.identified_match(dict(base,endereco='Rua Iacanga'),drogal))
+
+    def test_previous_cnpj_and_classification_are_preserved(self):
+        row={'fonte_id':'node/123','nome':'Drogal','endereco':'Rua Iacanga 786','latitude':-22.753,'longitude':-47.36,
+             'cnpj':'00000000000191','grupo':'farmacias_redes','grupo_confirmado':True}
+        c.register(self.path,[row],c.now())
+        self.assertEqual(c.apply_identified(self.path),0)
+        with c.database(self.path) as con:
+            stored=con.execute('SELECT * FROM concorrentes_cadastro').fetchone()
+            self.assertEqual(stored['cnpj'],'00000000000191')
+            self.assertEqual(stored['grupo'],'farmacias_redes')
+            self.assertEqual(stored['latitude'],row['latitude'])
+
+    def test_upgrade_fills_existing_rows_on_listing_without_external_service(self):
+        row={'fonte_id':'node/123','nome':'Drogal','endereco':'Rua Iacanga 786','latitude':-22.753,'longitude':-47.36}
+        with patch.object(c,'apply_identified',return_value=0):c.register(self.path,[row],c.now())
+        center={'latitude':-22.753,'longitude':-47.36,'versao':1,'endereco':'Centro teste'}
+        with patch.object(main,'LOCAL_DB',self.path),patch.object(c,'get_center',return_value=center),patch.object(c,'fetch_cnpj',side_effect=AssertionError('Rede nao deve ser usada')):
+            with TestClient(main.app) as client:
+                data=client.get('/api/concorrentes?raio=2&centro_versao=1').json()
+                self.assertEqual(data['cnpjs_preenchidos'],1)
+                self.assertEqual(data['items'][0]['cnpj'],'54375647008454')
+                self.assertEqual(data['items'][0]['dados_cnpj']['numero'],'786')
+                self.assertEqual(client.get('/api/concorrentes?raio=2&centro_versao=1').json()['cnpjs_preenchidos'],0)
