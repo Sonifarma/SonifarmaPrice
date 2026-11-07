@@ -8,6 +8,7 @@ import re
 import sqlite3
 import threading
 import time
+import unicodedata
 from urllib.request import Request as URLRequest,urlopen
 
 from fastapi import APIRouter,Header,HTTPException,Query,Request
@@ -88,7 +89,42 @@ def register(path,rows,observed_at):
                 cur=con.execute('INSERT INTO concorrentes_cadastro(fonte_id,nome,grupo,grupo_confirmado,latitude,longitude,endereco,site,cnpj,cnpj_origem,cnpj_status,criado_em,atualizado_em) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
                                 (values['fonte_id'],values['nome'],values['grupo'],values['grupo_confirmado'],lat,lon,values['endereco'],values['site'],cnpj,'OSM - vinculo nao confirmado' if cnpj else None,'pendente' if cnpj else 'nao_identificado',observed_at,observed_at))
                 added+=1;audit(con,cur.lastrowid,'cadastro_automatico',{},values)
-    return {'adicionados':added,'atualizados':updated}
+    identified=apply_identified(path)
+    return {'adicionados':added,'atualizados':updated,'cnpjs_identificados':identified}
+
+
+def normalized(value):
+    return ' '.join(re.sub(r'[^A-Z0-9]+',' ',unicodedata.normalize('NFKD',str(value)).encode('ascii','ignore').decode().upper()).split())
+
+
+def identified_match(row,entry):
+    # A revisao cobre estas filiais da regiao Americana/Santa Barbara, nao homonimos nacionais.
+    if not (-22.78 <= row['latitude'] <= -22.73 and -47.39 <= row['longitude'] <= -47.33):return False
+    if normalized(row['nome']) not in {normalized(name) for name in entry['nomes']}:return False
+    if entry['fonte_id']:
+        return row['fonte_id']==entry['fonte_id']
+    address=normalized(row['endereco'])
+    return (' '+entry['rua']+' ') in (' '+address+' ') and entry['numero'] in address.split()
+
+
+def apply_identified(path):
+    """Complementa filiais pesquisadas, sem rede e sem substituir CNPJ existente."""
+    from app.identified_competitors import IDENTIFIED
+    count=0
+    with database(path) as con:
+        rows=con.execute('SELECT * FROM concorrentes_cadastro WHERE cnpj IS NULL').fetchall()
+        for row in rows:
+            candidates=[entry for entry in IDENTIFIED if identified_match(row,entry)]
+            if len(candidates)!=1:continue
+            entry=candidates[0];data=entry['dados']
+            if normalize_cnpj(entry['cnpj'])!=entry['cnpj'] or data.get('cnpj')!=entry['cnpj']:continue
+            origin='Pesquisa de filial por endereco - '+entry['evidencia']
+            cur=con.execute("UPDATE concorrentes_cadastro SET cnpj=?,cnpj_origem=?,dados_cnpj=?,cnpj_status='consultado_endereco_conferido',cnpj_consultado_em=? WHERE id=? AND cnpj IS NULL",
+                (entry['cnpj'],origin,json.dumps(data,ensure_ascii=False),data['consultado_em'],row['id']))
+            if cur.rowcount:
+                count+=1
+                audit(con,row['id'],'filial_identificada_por_endereco',{}, {'cnpj':entry['cnpj'],'evidencia':entry['evidencia'],'consultado_em':data['consultado_em']})
+    return count
 
 
 def set_group(path,source,group):
@@ -101,7 +137,7 @@ def set_group(path,source,group):
 
 def fetch_cnpj(cnpj):
     # BrasilAPI e um intermediario comunitario, nao uma API oficial da Receita.
-    request=URLRequest('https://brasilapi.com.br/api/cnpj/v1/'+cnpj,headers={'User-Agent':'SonifarmaPrice/1.1.6 (+https://github.com/Sonifarma/SonifarmaPrice)'})
+    request=URLRequest('https://brasilapi.com.br/api/cnpj/v1/'+cnpj,headers={'User-Agent':'SonifarmaPrice/1.1.7 (+https://github.com/Sonifarma/SonifarmaPrice)'})
     with urlopen(request,timeout=12) as response:raw=response.read(2_000_001)
     if len(raw)>2_000_000:raise ValueError('Resposta cadastral excede limite.')
     data=json.loads(raw)
@@ -178,9 +214,10 @@ def make_router(path,distance):
         center=get_center(path())
         if center is None:raise HTTPException(422,'Cadastre o centro da pesquisa.')
         if center['versao']!=centro_versao:raise HTTPException(409,'Centro alterado. Recarregue o cadastro.')
+        filled=apply_identified(path())
         rows=within_radius(path(),center,raio,distance)
         if q.strip():rows=[r for r in rows if q.casefold().strip() in ' '.join(str(r.get(k) or '') for k in ['nome','endereco','cnpj']).casefold()]
-        return {'items':rows[offset:offset+limit],'total':len(rows),'has_more':offset+limit<len(rows),'centro':center,'raio_km':raio}
+        return {'items':rows[offset:offset+limit],'total':len(rows),'has_more':offset+limit<len(rows),'centro':center,'raio_km':raio,'cnpjs_preenchidos':filled}
 
     @router.post('/{identifier}/cnpj')
     def link(identifier:int,body:LinkCnpj,request:Request,x_price_config:str|None=Header(default=None)):

@@ -345,7 +345,12 @@
         for(const [url,label] of [[store.site,'Site declarado'],[store.fonte_url,'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';links.append(a,document.createElement('br'));}
         const details=cell(row,'');const text=document.createElement('p');
         const info=store.dados_cnpj;
-        text.textContent=info?`${info.razao_social||''} · ${info.descricao_situacao_cadastral||''} · CNAE ${info.cnae_fiscal||''}: ${info.cnae_fiscal_descricao||''}. Consulta: ${dateBR(info.consultado_em)}. Confira o vínculo com esta filial.`:'CNPJ ainda não consultado. Informe somente o CNPJ identificado desta filial.';
+        const identified=store.cnpj_origem?.startsWith('Pesquisa de filial por endereco - ');
+        text.textContent=info?`${info.razao_social||''} · ${info.descricao_situacao_cadastral||''} · CNAE ${info.cnae_fiscal||''}: ${info.cnae_fiscal_descricao||''}. Consulta: ${dateBR(info.consultado_em)}. ${identified?'Filial identificada por endereço.':'Confira o vínculo com esta filial.'}`:'CNPJ ainda não identificado com segurança. A loja continua disponível na pesquisa de mercado.';
+        if(info){
+          const fiscal=document.createElement('p');fiscal.className='muted';fiscal.textContent='Endereço cadastral: '+[info.descricao_tipo_de_logradouro,info.logradouro,info.numero,info.complemento,info.municipio,info.uf].filter(Boolean).join(' · ');details.append(fiscal);
+          const source=document.createElement('a');source.href='https://brasilapi.com.br/api/cnpj/v1/'+store.cnpj;source.textContent='Fonte dos dados cadastrais';source.target='_blank';source.rel='noopener noreferrer';details.append(source);
+        }
         if(store.cnpj_status==='falha_consulta')text.textContent+=' A última tentativa falhou; os dados anteriores foram preservados.';
         const input=document.createElement('input');input.value=store.cnpj||'';input.maxLength=30;input.placeholder='CNPJ desta filial';input.setAttribute('aria-label','CNPJ de '+store.nome);
         const button=document.createElement('button');button.type='button';button.textContent='Consultar CNPJ';
@@ -353,7 +358,7 @@
         details.append(text,input,button);$('competitors-rows').append(row);
       });
       $('competitors-previous').disabled=competitorOffset===0;$('competitors-next').disabled=!data.has_more;
-      message('competitors-message',`${data.total} concorrentes salvos no filtro · raio ${radius} km · ${data.centro.endereco}. Exibidos ${data.items.length}.`);
+      message('competitors-message',`${data.total} concorrentes salvos no filtro · raio ${radius} km · ${data.centro.endereco}. Exibidos ${data.items.length}.`+(data.cnpjs_preenchidos?` ${data.cnpjs_preenchidos} CNPJs identificados foram preenchidos automaticamente.`:'' ));
     }catch(error){if(token===competitorRequest){empty($('competitors-rows'),'Cadastro não carregado.',4);message('competitors-message',error.message,true);}}
   }
   $('competitors-form').addEventListener('submit',event=>{event.preventDefault();competitorOffset=0;loadCompetitors();});

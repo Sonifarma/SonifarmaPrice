@@ -8,7 +8,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ['MODE'] = 'demo'
-from app import main, search_center, local_stores
+from app import main, search_center, local_stores, competitors
 import uvicorn
 
 
@@ -29,6 +29,10 @@ def run():
         {'type':'way','id':2,'center':{'lat':0.002,'lon':0},'tags':{'name':'Farmacia ficticia','amenity':'pharmacy','website':'https://farmacia.example.com'}},
         {'type':'node','id':3,'lat':1,'lon':0,'tags':{'name':'Fora do raio','shop':'cosmetics','website':'https://fora.example.com'}},
     ]
+    competitors.fetch_cnpj = lambda cnpj: {'cnpj':cnpj,'razao_social':'Empresa ficticia para teste',
+        'descricao_situacao_cadastral':'ATIVA','cnae_fiscal':4711302,'cnae_fiscal_descricao':'Supermercados',
+        'logradouro':'Rua de teste','numero':'10','municipio':'Cidade de teste','uf':'SP',
+        'consultado_em':competitors.now(),'fonte':'Fonte ficticia de teste'}
     # Geocodificador ficticio: o teste de navegador nao acessa servico externo.
     search_center.geocode = lambda address: [{'endereco':'Rua demonstrativa, 10, Cidade de teste, Brasil','latitude':0.0,'longitude':0.0,'tipo':'house'}]
     with tempfile.TemporaryDirectory() as directory:
