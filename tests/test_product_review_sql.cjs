@@ -10,6 +10,7 @@ from datetime import date
 from decimal import Decimal
 from app.main import SQL
 from app.product_review import build_query
+from app.market_products import lookup_query
 config=dict(SCHEMA='public',TABLE='entrada_teste',ID_COLUMN='embalagemid',UNIT_COLUMN='unidadeid',DATE_COLUMN='datahora',STATUS_COLUMN='status',STATUS_VALUE='F',ID_KIND='embalagem')
 cases={}
 for name,cfg,kind,only,start,end,limit,offset,q in [
@@ -20,6 +21,9 @@ for name,cfg,kind,only,start,end,limit,offset,q in [
  ('injection',None,None,False,None,None,100,0,"';DROP TABLE produto;--"),
 ]:
  query,params=build_query(SQL,cfg,kind,'produto',q,start,end,Decimal('30'),only,False,limit,offset)
+ cases[name]={'query':query,'params':params}
+for name,term in [('lookup_middle','uto'),('lookup_ean','4006381333931'),('lookup_literal','%_')]:
+ query,params=lookup_query(term,20,0)
  cases[name]={'query':query,'params':params}
 print(json.dumps(cases,default=str))
 `;
@@ -35,7 +39,7 @@ print(json.dumps(cases,default=str))
    CREATE TABLE venda(id int,unidadenegocioid int,status text,datahorafechamento timestamp);
    CREATE TABLE itemvenda(vendaid int,embalagemid int,unidadenegocioid int,status text,quantidade numeric,valortotal numeric);
    CREATE TABLE entrada_teste(embalagemid int,unidadeid int,status text,datahora timestamp);
-   INSERT INTO produto VALUES(1,'001','A','A'),(2,'002','B','A'),(3,'003','C','A'),(4,'004','D','A');
+   INSERT INTO produto VALUES(1,'001','Produto A','A'),(2,'002','B','A'),(3,'003','C','A'),(4,'004','D','A');
    INSERT INTO embalagem VALUES(11,1,'4006381333931','UN',1,10),(12,1,'96385074','CX',2,20),(22,2,'04006381333931','UN',1,10),(33,3,'12345678','UN',1,0),(44,4,'12345679','UN',1,10);
    INSERT INTO custoproduto VALUES(1,1,1,8,8),(99,1,2,999,999),(2,2,1,4,4),(3,3,1,5,5),(4,4,1,'NaN',1);
    INSERT INTO estoque VALUES(1,11,1,5),(99,11,2,999);
@@ -54,6 +58,9 @@ print(json.dumps(cases,default=str))
   const second=await run('entry_second');assert.equal(second[0].embalagem_id,33);
   const zoned=await run('timezone');assert.deepEqual(zoned.map(r=>r.embalagem_id),[11]);
   assert.deepEqual(await run('injection'),[]);
+  assert.equal((await run('lookup_middle'))[0].produto_id,1);
+  assert.equal((await run('lookup_ean'))[0].ean,'4006381333931');
+  assert.deepEqual(await run('lookup_literal'),[]);
   console.log('PostgreSQL simulado OK: unidade, status finalizado, ultima entrada, dia completo, fuso, margem/NaN e paginacao antes do limite.');
  } finally {await db.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -111,6 +111,22 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()['items'][0]['motivo_revisao'],'custo_inconsistente')
         con.close.assert_called_once()
 
+    def test_market_lookup_finds_middle_of_description_and_exact_ean(self):
+        with patch.object(main,'demo_rows',return_value=[dict(ROWS[0],descricao='DORFLEX COMPRIMIDOS 30 UN'),dict(ROWS[1],descricao='AMOXICILINA 500 MG')]):
+            result=self.client.get('/api/mercado/produtos?q=flex').json()
+            self.assertEqual(result['items'][0]['descricao'],'DORFLEX COMPRIMIDOS 30 UN')
+            self.assertEqual(result['items'][0]['ean'],'4006381333931')
+            self.assertEqual(len(self.client.get('/api/mercado/produtos?q=96385074').json()['items']),1)
+            self.assertEqual(self.client.get('/api/mercado/produtos?q=xyz').json()['items'],[])
+            self.assertEqual(self.client.get('/api/mercado/produtos?q=%20%20').status_code,422)
+
+    def test_market_lookup_paginates_without_price_or_review_filter(self):
+        result=self.client.get('/api/mercado/produtos?q=Produto&limit=1&offset=1').json()
+        self.assertEqual(result['items'][0]['produto_id'],2)
+        self.assertTrue(result['has_more'])
+        self.assertNotIn('custo',result['items'][0])
+        self.assertNotIn('preco',result['items'][0])
+
     def test_input_limits_and_web_assets(self):
         for query in ['margem_minima=100','modo=composicao','limit=201','offset=-1','q='+'x'*121]:
             self.assertEqual(self.client.get('/api/revisao/produtos?'+query).status_code,422)
