@@ -5,11 +5,14 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
  try {
   const page=await browser.newPage({viewport:{width:1500,height:1050}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/api/mercado/comparar?*',route=>route.fulfill({json:{observacoes:[
+  await page.route('**/api/mercado/comparar?*',route=>{
+   const params=new URL(route.request().url()).searchParams;
+   assert.equal(params.has('latitude'),false);assert.equal(params.has('longitude'),false);assert.equal(params.has('raio'),false);
+   return route.fulfill({json:{observacoes:[
    {grupo:'farmacias_redes',estabelecimento:'Rede A',distancia_km:1,preco:12,coletado_em:'2026-11-07',fonte:'Fonte de teste',condicao:'Normal'},
    {grupo:'farmacias_redes',estabelecimento:'Rede B',distancia_km:2,preco:14,coletado_em:'2026-11-07',fonte:'Fonte de teste',condicao:'Normal'},
    {grupo:'farmacias_redes',estabelecimento:'Rede C',distancia_km:1.2,preco:9,coletado_em:'2026-11-07',fonte:'Fonte de teste',condicao:'Clube'},
-  ],aviso:'Observações fictícias para teste.'}}));
+  ],aviso:'Observações fictícias para teste.'}});});
   await page.goto(process.env.TEST_URL||'http://127.0.0.1:18770');
   await page.locator('#shown').filter({hasText:'100'}).waitFor();
   assert.equal(await page.locator('#only-review').isChecked(),true);
@@ -25,7 +28,8 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   assert.equal(await page.locator('#rows tr').count(),1);
   assert.match(await page.locator('#rows').innerText(),/Margem abaixo do filtro/);
   await page.locator('#rows button').click();assert.equal(await page.locator('#eanmerc').inputValue(),'4006381333931');
-  await page.locator('#latmerc').fill('0');await page.locator('#lonmerc').fill('0');await page.locator('#market-search').click();
+  assert.equal(await page.locator('#latmerc,#lonmerc,#raiomerc').count(),0);
+  await page.locator('#market-search').click();
   await page.locator('#marketmsg').filter({hasText:'3 observações'}).waitFor();
   assert.equal(await page.locator('.chart-group').count(),2); // Condicao Clube separada de Normal.
   assert.equal(await page.locator('#marketrows tr').count(),3);

@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.1')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.1.2')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
@@ -105,16 +105,18 @@ async def market_import(arquivo:UploadFile=File(...)):
   con.executemany('INSERT INTO observacoes(ean,grupo,estabelecimento,latitude,longitude,preco,coletado_em,fonte,condicao) VALUES(?,?,?,?,?,?,?,?,?)',valid)
  return {'importados':len(valid),'mensagem':'Importação concluída no banco local; Alpha7 não alterado.'}
 @app.get('/api/mercado/comparar')
-def market_compare(ean:str=Query(...,min_length=8,max_length=14),latitude:float=Query(...,ge=-90,le=90),longitude:float=Query(...,ge=-180,le=180),raio:float=Query(2,ge=0.5,le=50),dias:int=Query(7,ge=1,le=90)):
+def market_compare(ean:str=Query(...,min_length=8,max_length=14),latitude:float|None=Query(None,ge=-90,le=90),longitude:float|None=Query(None,ge=-180,le=180),raio:float=Query(2,ge=0.5,le=50),dias:int=Query(7,ge=1,le=90)):
+ if (latitude is None)!=(longitude is None):raise HTTPException(422,'Informe latitude e longitude juntas ou omita ambas.')
+ geografico=latitude is not None
  limite=(datetime.now().date()-timedelta(days=dias)).isoformat()
  with localdb() as con:
   rows=con.execute('SELECT grupo,estabelecimento,latitude,longitude,preco,coletado_em,fonte,condicao FROM observacoes WHERE ean=? AND coletado_em>=?',(ean,limite)).fetchall()
  itens=[]
  for g,n,lat,lon,p,d,f,cond in rows:
-  dist=km(latitude,longitude,lat,lon)
-  if dist<=raio:itens.append({'grupo':g,'estabelecimento':n,'distancia_km':round(dist,2),'preco':p,'coletado_em':d,'fonte':f,'condicao':cond})
+  dist=km(latitude,longitude,lat,lon) if geografico else None
+  if not geografico or dist<=raio:itens.append({'grupo':g,'estabelecimento':n,'distancia_km':round(dist,2) if dist is not None else None,'preco':p,'coletado_em':d,'fonte':f,'condicao':cond})
  itens.sort(key=lambda x:x['preco'])
- return {'ean':ean,'raio_km':raio,'observacoes':itens,'menor_preco':itens[0]['preco'] if itens else None,'aviso':'Dados importados, não verificados automaticamente. Preços condicionados não devem gerar ajustes automáticos.'}
+ return {'ean':ean,'raio_km':raio if geografico else None,'filtro_geografico':geografico,'observacoes':itens,'menor_preco':itens[0]['preco'] if itens else None,'aviso':'Dados importados, não verificados automaticamente. Preços condicionados não devem gerar ajustes automáticos.'}
 
 # Consulta incremental, sem alterar os endpoints V1.1 existentes.
 from app.product_review import make_router

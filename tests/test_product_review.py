@@ -1,4 +1,6 @@
 import os
+import tempfile
+from pathlib import Path
 from datetime import date
 from decimal import Decimal
 import unittest
@@ -114,6 +116,39 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(self.client.get('/api/revisao/produtos?'+query).status_code,422)
         for path in ['/','/static/app.js','/static/sonifarma-theme.css','/static/sonifarma-logo.png','/static/modelo_precos.csv']:
             self.assertEqual(self.client.get(path).status_code,200)
+
+
+class MarketScopeTests(unittest.TestCase):
+    def setUp(self):
+        tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        p=patch.object(main,'LOCAL_DB',Path(tmp.name)/'mercado.sqlite3')
+        p.start();self.addCleanup(p.stop)
+        self.client=TestClient(main.app);self.addCleanup(self.client.close)
+        con=main.localdb()
+        try:
+            for name,lat in [('Perto',0),('Longe',40)]:
+                con.execute('INSERT INTO observacoes(ean,grupo,estabelecimento,latitude,longitude,preco,coletado_em,fonte,condicao) VALUES(?,?,?,?,?,?,?,?,?)',
+                            ('4006381333931','supermercados',name,lat,0,12,date.today().isoformat(),'teste','Normal'))
+            con.commit()
+        finally:
+            con.close()
+
+    def test_without_coordinates_includes_all_locations(self):
+        response=self.client.get('/api/mercado/comparar?ean=4006381333931')
+        self.assertEqual(response.status_code,200)
+        data=response.json()
+        self.assertEqual(len(data['observacoes']),2)
+        self.assertFalse(data['filtro_geografico'])
+        self.assertIsNone(data['raio_km'])
+        self.assertTrue(all(item['distancia_km'] is None for item in data['observacoes']))
+
+    def test_existing_radius_api_still_works_and_requires_coordinate_pair(self):
+        data=self.client.get('/api/mercado/comparar?ean=4006381333931&latitude=0&longitude=0&raio=2').json()
+        self.assertEqual(len(data['observacoes']),1)
+        self.assertTrue(data['filtro_geografico'])
+        self.assertEqual(data['observacoes'][0]['estabelecimento'],'Perto')
+        self.assertEqual(self.client.get('/api/mercado/comparar?ean=4006381333931&latitude=0').status_code,422)
 
 
 if __name__=='__main__':unittest.main()
