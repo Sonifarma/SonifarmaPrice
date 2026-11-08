@@ -7,6 +7,8 @@ import math
 import hashlib
 import re
 import sqlite3
+import ssl
+from urllib.error import HTTPError,URLError
 import threading
 import time
 from urllib.parse import urlencode,urlsplit,quote
@@ -131,6 +133,16 @@ def parse_offers(products,source,ean):
  return result[:20]
 
 
+def failure_code(exc):
+ if isinstance(exc,HTTPError):return 'HTTP '+str(exc.code)
+ if isinstance(exc,TimeoutError):return 'TEMPO_ESGOTADO'
+ if isinstance(exc,ssl.SSLError) or (isinstance(exc,URLError) and isinstance(exc.reason,ssl.SSLError)):return 'CONEXAO_TLS'
+ if type(exc).__module__.startswith('playwright'):
+  return 'NAVEGADOR_NAO_INSTALADO' if "Executable doesn't exist" in str(exc) else 'FALHA_NO_NAVEGADOR'
+ if isinstance(exc,URLError):return 'CONEXAO_INDISPONIVEL'
+ return type(exc).__name__
+
+
 def query_source(path,key,ean,descricao="",force=False):
  source=SOURCES[key]
  with database(path) as con:row=con.execute('SELECT * FROM catalogos_online WHERE fonte=? AND ean=?',(key,ean)).fetchone()
@@ -147,7 +159,7 @@ def query_source(path,key,ean,descricao="",force=False):
  except Exception as exc:
   log.warning('Catalogo publico %s indisponivel (%s)',key,type(exc).__name__)
   return {'ofertas':json.loads(row['ofertas']) if row else [],'coletado_em':row['coletado_em'] if row else None,'cache':bool(row),'desatualizado':True,'estado':'indisponivel',
-    'mensagem':str(exc) if isinstance(exc,todo_dia.CatalogNotReady) else 'Fonte indisponivel ou consulta nao permitida. Nenhum preco novo obtido; dados anteriores, quando presentes, mantidos com a data original.'}
+    'erro_codigo':failure_code(exc),'mensagem':str(exc) if isinstance(exc,todo_dia.CatalogNotReady) else 'Consulta por EAN indisponivel ('+failure_code(exc)+'). Nenhum preco novo obtido; dados anteriores, quando presentes, mantidos com a data original.'}
  finally:locks[key].release()
 
 
@@ -194,7 +206,7 @@ def query_description(path,key,wanted,force=False):
   return {'candidatos':candidates,'coletado_em':timestamp,'cache':False,'desatualizado':False}
  except Exception as exc:
   log.warning('Busca por descricao %s indisponivel (%s)',key,type(exc).__name__)
-  return {'candidatos':json.loads(row['candidatos']) if row else [],'coletado_em':row['coletado_em'] if row else None,'cache':bool(row),'desatualizado':True,'mensagem':'Busca por descricao indisponivel. Resultados anteriores, quando presentes, mantem a data original.'}
+  return {'candidatos':json.loads(row['candidatos']) if row else [],'coletado_em':row['coletado_em'] if row else None,'cache':bool(row),'desatualizado':True,'erro_codigo':failure_code(exc),'mensagem':'Busca por descricao indisponivel ('+failure_code(exc)+'). Resultados anteriores, quando presentes, mantem a data original.'}
  finally:locks[key].release()
 
 
@@ -266,7 +278,12 @@ class OnlineSearch(BaseModel):
 
 def matches(store,source):
  name=normalized(store['nome'])
- named=name in source['nomes'] or (source.get('adaptador')=='raia' and name.startswith('DROGA RAIA '))
+ named=name in source['nomes']
+ if source.get('adaptador')=='raia':
+  if 'DROGASIL' in name:return False
+  site=store.get('site') or ''
+  official=bool(public_link(site,'www.drogaraia.com.br') or public_link(site,'drogaraia.com.br'))
+  named=named or name=='DROGARAIA' or bool(re.match(r'^(DROGA RAIA|DROGARIA RAIA|RAIA)( |$)',name)) or official
  return named or bool(not source.get('cnpj_compartilhado') and store.get('cnpj') and store['cnpj'].startswith(source['cnpj_raiz']))
 
 
@@ -308,8 +325,8 @@ def make_router(path,distance):
      result.pop('mensagem',None)
     elif selected:result.update(ofertas=[],mensagem='O candidato selecionado nao esta mais disponivel nesta busca. Confira novamente a apresentacao.')
     elif candidates:result['mensagem']='Produtos encontrados por descricao. Confira apresentacao e EAN e escolha o correspondente para incluir o preco no grafico.'
-    elif found.get('mensagem'):result['mensagem']=found['mensagem']
-    if found.get('desatualizado'):result['aviso_descricao']='Busca por descricao com coleta anterior; confira a data.'
+    elif found.get('mensagem'):result['mensagem']=((result.get('mensagem')+' ') if result.get('mensagem') else '')+found['mensagem']
+    if found.get('desatualizado'):result['aviso_descricao']='Busca por descricao com coleta anterior; confira a data.' if found.get('coletado_em') else 'Busca por descricao indisponivel; nao ha candidatos de coleta anterior.'
    result.update(fonte=key,rede=source['nome'],grupo=group_for_stores(related),lojas_no_raio=[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related])
    results.append(result)
   return {'fontes_nao_consultadas':not_queried,'composicao':composition_results(path(),body.descricao,body.ean,results,force=body.atualizar),'ean':body.ean,'centro':center,'raio_km':body.raio,'descricao_original':body.descricao.strip(),'busca_normalizada':wanted['descricao'] if wanted else None,'links_pesquisa':[{'nome':name,'url':'https://www.google.com/search?'+urlencode({'q':'site:'+host+' '+wanted['descricao']})} for name,host in [('Drogasil','www.drogasil.com.br')]] if wanted else [],'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],

@@ -53,3 +53,21 @@ class RaiaTests(unittest.TestCase):
   product=todo_product();product['Items'][0].update(RetailPrice=12,ListPrice=20,PromotionPrice=9)
   parsed=todo_dia.parse_product(todo_html(product),TODO_URL)[0]
   self.assertEqual(parsed['preco'],9);self.assertEqual(parsed['preco_regular'],20);self.assertTrue(parsed['em_oferta'])
+
+ def test_browser_fallback_after_direct_http_error_keeps_exact_ean(self):
+  from urllib.error import HTTPError
+  search={'pageProps':{'results':{'products':[{'url':'/produto-teste.html','is1P':True,'isThirdPartner':False}]}}}
+  with patch.object(raia,'Browser') as browser:
+   page=browser.return_value.__enter__.return_value
+   page.get.side_effect=[document(search),document(data())]
+   offers=raia.offers(online.SOURCES['raia'],EAN,lambda *args:(_ for _ in ()).throw(HTTPError(URL,403,'Forbidden',{},None)),ean=EAN)
+  self.assertEqual(offers[0]['ean'],EAN);self.assertEqual(offers[0]['preco'],10)
+  self.assertEqual(offers[0]['metodo'],'navegador_publico')
+  self.assertTrue(raia.browser_url('https://www.drogaraia.com.br/search?w='+EAN))
+  for url in ['https://evil.test/teste.html','https://www.drogaraia.com.br/customer/','https://www.drogaraia.com.br/search?w=x&cpf=1','http://www.drogaraia.com.br/teste.html']:
+   self.assertFalse(raia.browser_url(url))
+ def test_raia_name_variations_and_official_site_do_not_match_drogasil(self):
+  for name in ['DrogaRaia','Drogaria Raia','Raia Americana']:
+   self.assertTrue(online.matches({'nome':name},online.SOURCES['raia']))
+  self.assertTrue(online.matches({'nome':'Farmácia da região','site':'https://www.drogaraia.com.br/'},online.SOURCES['raia']))
+  self.assertFalse(online.matches({'nome':'Drogasil','site':'https://www.drogaraia.com.br/'},online.SOURCES['raia']))

@@ -23,3 +23,7 @@ Testes verificam preço regular/oferta, Pix com condição, quantidade/PBM não 
 ## Atualização
 
 Sem dependência nova nesta versão. Quem já preparou a Todo Dia na V1.5.1 pode usar os comandos habituais de atualização. O preparo do navegador e catálogo da Todo Dia continua descrito em `TODO_DIA_NAVEGADOR.md` para instalações que ainda não o executaram.
+
+## Alternativa de acesso — V1.7.2
+
+Falhas no acesso direto agora acionam leitura pública por Chromium. A mensagem por EAN não é mais substituída por uma falha posterior de descrição. Veja instalação, diagnóstico e critérios de reconhecimento em [Concorrentes e coleta](CONCORRENTES_E_COLETA_V1_7_2.md).
