@@ -71,8 +71,8 @@ def get_center(path):
         return public_center(con.execute('SELECT * FROM centro_pesquisa WHERE id=1').fetchone())
 
 
-def geocode(address):
-    params = urlencode({'q': address, 'format': 'jsonv2', 'limit': 5, 'addressdetails': 1})
+def geocode_request(address,structured=None):
+    params = urlencode(({'q':address} if structured is None else structured) | {'format':'jsonv2','limit':5,'addressdetails':1})
     request = URLRequest('https://nominatim.openstreetmap.org/search?' + params, headers={
         'User-Agent': 'SonifarmaPrice/1.1.4 (https://github.com/Sonifarma/SonifarmaPrice)',
         'Accept-Language': 'pt-BR,pt;q=0.9',
@@ -98,6 +98,35 @@ def geocode(address):
         except (KeyError, ValueError, TypeError, OverflowError):
             continue
     return valid
+
+
+def mark_approximate_roads(result):
+    for item in result:
+        if item['tipo'] in {'road','primary','secondary','tertiary','residential','pedestrian','unclassified','service','trunk'}:
+            item['tipo']='rua_aproximada'
+            item['endereco']='LOCALIZACAO APROXIMADA DA RUA — numero nao confirmado: '+item['endereco']
+    return result
+
+
+def geocode(address):
+    result=geocode_request(address)
+    if result:return mark_approximate_roads(result)
+    # Enderecos fiscais precisam de separadores; complemento e CEP nao sao
+    # nomes de rua. Nunca usa ponto da cidade como se fosse a filial.
+    parts=[part.strip() for part in address.split(',') if part.strip()]
+    if len(parts)<4:return []
+    street,number,city,state=parts[:4]
+    if not number.isdigit() or len(state)!=2 or not street or not city:return []
+    time.sleep(1.05)
+    result=geocode_request(address,{'street':number+' '+street,'city':city,'state':state,'country':'Brasil'})
+    if result:return mark_approximate_roads(result)
+    time.sleep(1.05)
+    result=geocode_request(address,{'street':street,'city':city,'state':state,'country':'Brasil'})
+    # Um ponto aproximado da rua nao equivale ao numero solicitado.
+    for item in result:
+        item['tipo']='rua_aproximada'
+        item['endereco']='LOCALIZACAO APROXIMADA DA RUA — numero nao confirmado: '+item['endereco']
+    return result
 
 
 def mutation(request, header):
