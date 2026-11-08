@@ -203,7 +203,7 @@ def within_radius(path,center,radius,distance):
         if dist>radius:continue
         item['distancia_km']=round(dist,3)
         item['dados_cnpj']=json.loads(item['dados_cnpj']) if item['dados_cnpj'] else None
-        item['fonte_url']=('https://brasilapi.com.br/api/cnpj/v1/'+item['cnpj']) if item['fonte_id'].startswith('manual/') else 'https://www.openstreetmap.org/'+item['fonte_id']
+        item['fonte_url']=(('https://brasilapi.com.br/api/cnpj/v1/'+item['cnpj']) if item['cnpj'] else None) if item['fonte_id'].startswith('manual/') else 'https://www.openstreetmap.org/'+item['fonte_id']
         item['fonte']='Cadastro por CNPJ / operador' if item['fonte_id'].startswith('manual/') else 'OpenStreetMap'
         items.append(item)
     return sorted(items,key=lambda item:(item['distancia_km'],item['nome'],item['id']))
@@ -214,7 +214,7 @@ class LinkCnpj(BaseModel):
 
 
 class ManualCompetitor(BaseModel):
-    cnpj: str = Field(min_length=14,max_length=30)
+    cnpj: str = Field(default='',max_length=30)
     nome: str = Field(min_length=2,max_length=200)
     endereco: str = Field(min_length=8,max_length=300)
     candidato_id: str = Field(pattern=r'^[a-f0-9]{32}$')
@@ -259,7 +259,8 @@ def make_router(path,distance):
         from app import search_center
         from app.local_stores import GROUPS,safe_site
         cnpj=normalize_cnpj(body.cnpj)
-        if not cnpj or not body.nome.strip() or len(body.endereco.strip())<8:raise HTTPException(422,'Confira CNPJ, nome e endereco.')
+        if body.cnpj.strip() and not cnpj:raise HTTPException(422,'CNPJ invalido. Corrija ou deixe em branco para cadastrar sem CNPJ.')
+        if not body.nome.strip() or len(body.endereco.strip())<8:raise HTTPException(422,'Informe nome e endereco da loja.')
         if body.grupo and body.grupo not in GROUPS:raise HTTPException(422,'Grupo invalido.')
         site=safe_site(body.site) if body.site.strip() else None
         if body.site.strip() and not site:raise HTTPException(422,'Site invalido. Informe URL com https://.')
@@ -272,10 +273,12 @@ def make_router(path,distance):
         if dist>body.raio:raise HTTPException(422,'Localizacao fora do raio atual. Confira o endereco ou ajuste o raio da pesquisa.')
         with database(path()) as con:
             con.execute('BEGIN IMMEDIATE')
-            existing=con.execute('SELECT id FROM concorrentes_cadastro WHERE cnpj=?',(cnpj,)).fetchone()
-            if existing:raise HTTPException(409,'Este CNPJ ja esta cadastrado. Pesquise o cadastro existente.')
+            existing=con.execute('SELECT id FROM concorrentes_cadastro WHERE cnpj=?',(cnpj,)).fetchone() if cnpj else None
+            if not existing:
+                existing=next((row for row in con.execute('SELECT id,nome,endereco FROM concorrentes_cadastro') if normalized(row['nome'])==normalized(body.nome) and normalized(row['endereco'])==normalized(body.endereco)),None)
+            if existing:raise HTTPException(409,'Esta loja ou CNPJ ja esta cadastrado. Pesquise o cadastro existente.')
             timestamp=now()
-            cur=con.execute("INSERT INTO concorrentes_cadastro(fonte_id,nome,grupo,grupo_confirmado,latitude,longitude,endereco,site,cnpj,cnpj_origem,cnpj_status,criado_em,atualizado_em) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('manual/pendente',body.nome.strip(),body.grupo,int(bool(body.grupo)),candidate['latitude'],candidate['longitude'],body.endereco.strip(),site,cnpj,'informado pelo operador - conferir filial','pendente',timestamp,timestamp))
+            cur=con.execute("INSERT INTO concorrentes_cadastro(fonte_id,nome,grupo,grupo_confirmado,latitude,longitude,endereco,site,cnpj,cnpj_origem,cnpj_status,criado_em,atualizado_em) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('manual/pendente',body.nome.strip(),body.grupo,int(bool(body.grupo)),candidate['latitude'],candidate['longitude'],body.endereco.strip(),site,cnpj,'informado pelo operador - conferir filial' if cnpj else None,'pendente' if cnpj else 'nao_identificado',timestamp,timestamp))
             identifier=cur.lastrowid
             con.execute('UPDATE concorrentes_cadastro SET fonte_id=? WHERE id=?',('manual/'+str(identifier),identifier))
             audit(con,identifier,'cadastro_manual',{}, {'cnpj':cnpj,'nome':body.nome.strip(),'endereco':body.endereco.strip(),'latitude':candidate['latitude'],'longitude':candidate['longitude'],'grupo':body.grupo})
