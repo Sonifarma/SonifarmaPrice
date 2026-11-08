@@ -203,13 +203,25 @@ def within_radius(path,center,radius,distance):
         if dist>radius:continue
         item['distancia_km']=round(dist,3)
         item['dados_cnpj']=json.loads(item['dados_cnpj']) if item['dados_cnpj'] else None
-        item['fonte_url']='https://www.openstreetmap.org/'+item['fonte_id']
+        item['fonte_url']=('https://brasilapi.com.br/api/cnpj/v1/'+item['cnpj']) if item['fonte_id'].startswith('manual/') else 'https://www.openstreetmap.org/'+item['fonte_id']
+        item['fonte']='Cadastro por CNPJ / operador' if item['fonte_id'].startswith('manual/') else 'OpenStreetMap'
         items.append(item)
     return sorted(items,key=lambda item:(item['distancia_km'],item['nome'],item['id']))
 
 
 class LinkCnpj(BaseModel):
     cnpj:str=Field(min_length=14,max_length=30)
+
+
+class ManualCompetitor(BaseModel):
+    cnpj: str = Field(min_length=14,max_length=30)
+    nome: str = Field(min_length=2,max_length=200)
+    endereco: str = Field(min_length=8,max_length=300)
+    candidato_id: str = Field(pattern=r'^[a-f0-9]{32}$')
+    centro_versao: int = Field(ge=1)
+    raio: float = Field(default=2,ge=0.5,le=50)
+    grupo: str | None = None
+    site: str = Field(default='',max_length=500)
 
 
 def make_router(path,distance):
@@ -224,6 +236,50 @@ def make_router(path,distance):
         rows=within_radius(path(),center,raio,distance)
         if q.strip():rows=[r for r in rows if q.casefold().strip() in ' '.join(str(r.get(k) or '') for k in ['nome','endereco','cnpj']).casefold()]
         return {'items':rows[offset:offset+limit],'total':len(rows),'has_more':offset+limit<len(rows),'centro':center,'raio_km':raio,'cnpjs_preenchidos':filled}
+
+    @router.post('/cnpj/buscar')
+    def lookup(body:LinkCnpj,request:Request,x_price_config:str|None=Header(default=None)):
+        global last_cnpj
+        mutation(request,x_price_config)
+        cnpj=normalize_cnpj(body.cnpj)
+        if not cnpj:raise HTTPException(422,'CNPJ invalido.')
+        if not cnpj_lock.acquire(blocking=False):raise HTTPException(429,'Consulta em andamento. Aguarde.')
+        try:
+            if time.monotonic()-last_cnpj<1:raise HTTPException(429,'Aguarde um segundo antes de consultar novamente.')
+            last_cnpj=time.monotonic()
+            try:data=fetch_cnpj(cnpj)
+            except Exception as exc:raise HTTPException(502,'Fonte cadastral indisponivel. Voce pode informar nome e endereco manualmente.') from exc
+            address=' '.join(str(data.get(k) or '') for k in ['descricao_tipo_de_logradouro','logradouro','numero','complemento','bairro','municipio','uf','cep']).strip()
+            return {'nome':data.get('nome_fantasia') or data.get('razao_social') or '', 'endereco':address,'dados_cnpj':data}
+        finally:cnpj_lock.release()
+
+    @router.post('/manual')
+    def create(body:ManualCompetitor,request:Request,x_price_config:str|None=Header(default=None)):
+        mutation(request,x_price_config)
+        from app import search_center
+        from app.local_stores import GROUPS,safe_site
+        cnpj=normalize_cnpj(body.cnpj)
+        if not cnpj or not body.nome.strip() or len(body.endereco.strip())<8:raise HTTPException(422,'Confira CNPJ, nome e endereco.')
+        if body.grupo and body.grupo not in GROUPS:raise HTTPException(422,'Grupo invalido.')
+        site=safe_site(body.site) if body.site.strip() else None
+        if body.site.strip() and not site:raise HTTPException(422,'Site invalido. Informe URL com https://.')
+        with search_center.database(path()) as con:
+            center=con.execute('SELECT * FROM centro_pesquisa WHERE id=1').fetchone()
+            if not center or center['versao']!=body.centro_versao:raise HTTPException(409,'Centro alterado ou pendente. Recarregue o cadastro.')
+            candidate=con.execute('SELECT * FROM centro_candidatos WHERE id=?',(body.candidato_id,)).fetchone()
+        if not candidate or candidate['criado_em']<(datetime.now(timezone.utc)-timedelta(days=1)).isoformat() or candidate['consulta']!=' '.join(body.endereco.split()).casefold():raise HTTPException(422,'Localizacao expirada ou endereco alterado. Busque o endereco novamente.')
+        dist=distance(center['latitude'],center['longitude'],candidate['latitude'],candidate['longitude'])
+        if dist>body.raio:raise HTTPException(422,'Localizacao fora do raio atual. Confira o endereco ou ajuste o raio da pesquisa.')
+        with database(path()) as con:
+            con.execute('BEGIN IMMEDIATE')
+            existing=con.execute('SELECT id FROM concorrentes_cadastro WHERE cnpj=?',(cnpj,)).fetchone()
+            if existing:raise HTTPException(409,'Este CNPJ ja esta cadastrado. Pesquise o cadastro existente.')
+            timestamp=now()
+            cur=con.execute("INSERT INTO concorrentes_cadastro(fonte_id,nome,grupo,grupo_confirmado,latitude,longitude,endereco,site,cnpj,cnpj_origem,cnpj_status,criado_em,atualizado_em) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",('manual/pendente',body.nome.strip(),body.grupo,int(bool(body.grupo)),candidate['latitude'],candidate['longitude'],body.endereco.strip(),site,cnpj,'informado pelo operador - conferir filial','pendente',timestamp,timestamp))
+            identifier=cur.lastrowid
+            con.execute('UPDATE concorrentes_cadastro SET fonte_id=? WHERE id=?',('manual/'+str(identifier),identifier))
+            audit(con,identifier,'cadastro_manual',{}, {'cnpj':cnpj,'nome':body.nome.strip(),'endereco':body.endereco.strip(),'latitude':candidate['latitude'],'longitude':candidate['longitude'],'grupo':body.grupo})
+        return {'id':identifier,'distancia_km':round(dist,3),'mensagem':'Concorrente cadastrado e incluido na pesquisa dentro do raio.'}
 
     @router.post('/{identifier}/cnpj')
     def link(identifier:int,body:LinkCnpj,request:Request,x_price_config:str|None=Header(default=None)):

@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict');
+const {chromium}=require('playwright');
+(async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});try{
+const page=await browser.newPage({viewport:{width:1400,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+await page.goto('http://127.0.0.1:18770');await page.locator('[data-tab=concorrentes]').click();
+await page.locator('.manual-competitor>summary').click();
+await page.route('**/api/concorrentes/cnpj/buscar',r=>r.fulfill({json:{nome:'Droga Ge teste',endereco:'Rua de teste 504 Americana'}}));
+await page.locator('#competitor-add-lookup').click();await page.locator('#competitor-add-message').filter({hasText:'Dados consultados'}).waitFor({state:'attached'});
+assert.equal(await page.locator('#competitor-add-name').inputValue(),'Droga Ge teste');
+await page.locator('#competitor-add-group').selectOption('farmacias_independentes');
+await page.locator('#competitor-add-form button[type=submit]').click();
+await page.locator('#competitor-add-points button').first().waitFor();
+await page.locator('#competitor-add-address').fill('Rua de teste alterada');assert.equal(await page.locator('#competitor-add-points button').count(),0);
+await page.locator('#competitor-add-address').fill('Rua de teste 504 Americana');
+await page.locator('#competitor-add-form button[type=submit]').click();await page.locator('#competitor-add-points button').first().click();
+await page.locator('#competitor-add-message').filter({hasText:'Concorrente cadastrado'}).waitFor({state:'attached'});
+const row=page.locator('#competitors-rows tr').filter({hasText:'Droga Ge teste'});assert.equal(await row.count(),1);
+assert.match(await row.innerText(),/Cadastro por CNPJ/);assert.equal(await row.getByRole('link',{name:'Cadastro OSM',exact:true}).count(),0);
+await row.getByRole('combobox').selectOption('farmacias_redes');await row.getByRole('button',{name:'Confirmar grupo'}).click();
+await page.locator('#competitors-message').filter({hasText:'Grupo confirmado'}).waitFor({state:'attached'});
+await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+assert.deepEqual(errors,[]);console.log('Cadastro manual OK: consulta, localizacao, invalidacao, persistencia compartilhada, fonte, grupo e mobile.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});
