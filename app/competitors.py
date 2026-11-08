@@ -249,7 +249,8 @@ def make_router(path,distance):
             last_cnpj=time.monotonic()
             try:data=fetch_cnpj(cnpj)
             except Exception as exc:raise HTTPException(502,'Fonte cadastral indisponivel. Voce pode informar nome e endereco manualmente.') from exc
-            address=' '.join(str(data.get(k) or '') for k in ['descricao_tipo_de_logradouro','logradouro','numero','complemento','bairro','municipio','uf','cep']).strip()
+            street=' '.join(str(data.get(k) or '').strip() for k in ['descricao_tipo_de_logradouro','logradouro']).strip()
+            address=', '.join(str(value).strip() for value in [street,data.get('numero'),data.get('municipio'),data.get('uf'),'Brasil'] if value and str(value).strip())
             return {'nome':data.get('nome_fantasia') or data.get('razao_social') or '', 'endereco':address,'dados_cnpj':data}
         finally:cnpj_lock.release()
 
