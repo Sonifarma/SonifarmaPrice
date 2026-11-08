@@ -57,7 +57,7 @@ class RaiaTests(unittest.TestCase):
  def test_browser_fallback_after_direct_http_error_keeps_exact_ean(self):
   from urllib.error import HTTPError
   search={'pageProps':{'results':{'products':[{'url':'/produto-teste.html','is1P':True,'isThirdPartner':False}]}}}
-  with patch.object(raia,'Browser') as browser:
+  with patch.object(raia,'standard_browser') as browser:
    page=browser.return_value.__enter__.return_value
    page.get.side_effect=[document(search),document(data())]
    offers=raia.offers(online.SOURCES['raia'],EAN,lambda *args:(_ for _ in ()).throw(HTTPError(URL,403,'Forbidden',{},None)),ean=EAN)

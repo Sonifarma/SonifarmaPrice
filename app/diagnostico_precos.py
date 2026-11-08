@@ -1,6 +1,6 @@
 """Diagnostico local do raio e teste publico Raia; nao consulta nem altera o ERP."""
 import argparse,json,re
-from app import main,online_prices as online,search_center,todo_dia
+from app import main,online_prices as online,search_center,todo_dia,raia
 
 
 def report(ean,radius,description='SORO FISIOLOGICO C/10 AMP 5ML'):
@@ -9,7 +9,8 @@ def report(ean,radius,description='SORO FISIOLOGICO C/10 AMP 5ML'):
  related=[store for store in stores if online.matches(store,online.SOURCES['raia'])]
  result={'versao':main.app.version,'ean':ean,'raio_diagnostico_km':radius,'centro_cadastrado':bool(center),
   'concorrentes_no_raio':len(stores),'raias_reconhecidas_no_raio':[{'nome':s['nome'],'distancia_km':s['distancia_km'],'grupo':s['grupo']} for s in related],
-  'catalogo_raia':'pendente','ofertas_teste':[]}
+  'catalogo_raia':'pendente','ofertas_teste':[],
+  'modo_navegador_raia':'visivel' if raia.browser_mode() else 'headless','javascript_raia':True,'navegador_sistema_configurado':bool(raia.system_browser())}
  try:
   offers=online.catalog(online.SOURCES['raia'],ean)
   result.update(catalogo_raia='consultado',ofertas_teste=[{'produto':o['produto'],'ean':o['ean'],'preco':o['preco'],'url':o['url'],'metodo':o.get('metodo','http_publico')} for o in offers])
