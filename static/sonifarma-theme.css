@@ -11,3 +11,5 @@
 .description-candidate{padding:12px 0;border-bottom:1px solid var(--line)}.description-candidate strong{display:block;overflow-wrap:anywhere}.description-candidate button{margin-left:12px}.description-candidate p{margin:8px 0}
 
 #product-sentinel{height:1px}#period-summary{white-space:normal}.period-popover{min-width:290px}
+
+.composition-panel{grid-column:1 / -1;margin-top:24px;width:100%;box-sizing:border-box}.composition-bar{background:transparent;border:0;color:inherit;cursor:pointer;font:inherit;padding:8px;align-self:flex-end}.composition-bar:hover,.composition-bar:focus-visible{background:#e9f5f5;outline:2px solid #007f88}.composition-bar .bar{display:block}.composition-details{overflow-wrap:anywhere}.composition-details p{margin:8px 0}
