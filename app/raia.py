@@ -8,6 +8,13 @@ from app import composition
 from app.product_search import profile,compare,text
 
 
+# URLs publicas ja verificadas; o EAN e o preco continuam conferidos na pagina.
+PUBLIC_PRODUCT_PATHS={'7896230304536':'/adv-solucao-fisiologica-com-10-ampolas.html'}
+
+class RaiaReadError(ValueError):
+ def __init__(self,code,message):super().__init__(message);self.code=code
+
+
 def money(value):
  if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or not 0<value<100000:return None
  result=round(float(value),2)
@@ -27,7 +34,7 @@ class NextData(HTMLParser):
 def props(raw):
  parser=NextData();parser.feed(raw.decode('utf-8') if isinstance(raw,bytes) else raw)
  try:data=json.loads(''.join(parser.parts))['props']['pageProps']
- except (ValueError,KeyError,TypeError):raise ValueError('Formato da pagina publica Raia nao reconhecido.')
+ except (ValueError,KeyError,TypeError):raise RaiaReadError('RAIA_DADOS_PUBLICOS_INVALIDOS','Formato da pagina publica Raia nao reconhecido.')
  if not isinstance(data,dict):raise ValueError('Pagina Raia invalida.')
  return data
 
@@ -40,13 +47,15 @@ def product_offer(data,url,ean=None):
  attrs={item.get('attribute_code'):item.get('value_string') for item in product.get('custom_attributes') or [] if isinstance(item,dict)}
  if attrs.get('ean') and attrs['ean']!=[code]:return None
  slug=attrs.get('url_key') or []
- if len(slug)!=1 or urlsplit(url).path!='/'+slug[0]+'.html':raise ValueError('Pagina Raia diferente do produto solicitado.')
+ if len(slug)!=1 or urlsplit(url).path!='/'+slug[0]+'.html':raise RaiaReadError('RAIA_PAGINA_DIVERGENTE','Pagina Raia diferente do produto solicitado.')
  live=product.get('liveComposition') or {};stock=live.get('liveStock') or {};price_data=live.get('livePrice') or {};aux=product.get('price_aux') or {}
  qty=stock.get('qty')
  if isinstance(qty,bool) or not isinstance(qty,(int,float)) or not math.isfinite(qty) or qty<=0:return None
+ regular=money(aux.get('value_from'))
  price=money(price_data.get('valueTo')) or money(aux.get('value_to'))
+ if price is None and price_data.get('valueTo') is None and aux.get('value_to') is None:price=regular
  if price is None:return None
- regular=money(aux.get('value_from'));pix=money(price_data.get('pixPrice'))
+ pix=money(price_data.get('pixPrice'))
  condition='Preco publico no site; CEP, frete e disponibilidade a confirmar.'
  if pix and pix<price:
   regular=max(regular or price,price);price=pix;condition='Oferta para pagamento no Pix; CEP, frete e disponibilidade a confirmar.'
@@ -57,14 +66,14 @@ def product_offer(data,url,ean=None):
  active=next(iter(attrs.get('principioativonovo') or []),None) or None
  if active:active=text(active)
  return {'ean':code,'produto':title,'preco':price,'preco_regular':regular,'em_oferta':bool(regular and price<regular),
-  'moeda':'BRL','url':url,'vendedor':'Droga Raia','laboratorio':str(maker)[:100],
+  'tipo_preco':'oferta' if regular and price<regular else 'normal','moeda':'BRL','url':url,'vendedor':'Droga Raia','laboratorio':str(maker)[:100],
   'composicao':composition.signature(title,active),'condicao':condition,'abrangencia':'site_da_rede','filial_confirmada':False}
 
 
 def search_pages(source,term,fetch,limit=6):
  data=props(fetch(source,'/search?'+urlencode({'w':term})))
  results=(data.get('pageProps') or {}).get('results')
- if not isinstance(results,dict) or not isinstance(results.get('products'),list):raise ValueError('Busca publica Raia nao reconhecida.')
+ if not isinstance(results,dict) or not isinstance(results.get('products'),list):raise RaiaReadError('RAIA_BUSCA_PUBLICA_INVALIDA','Busca publica Raia nao reconhecida.')
  urls=[]
  for item in results['products']:
   if not isinstance(item,dict) or item.get('is1P') is not True or item.get('isThirdPartner') is not False:continue
@@ -81,6 +90,11 @@ def search_pages(source,term,fetch,limit=6):
 
 def _offers(source,term,fetch,ean=None,wanted=None,ref=None):
  result=[];seen=set()
+ if ean in PUBLIC_PRODUCT_PATHS:
+  path=PUBLIC_PRODUCT_PATHS[ean];url='https://'+source['host']+path
+  try:known=product_offer(props(fetch(source,path)),url,ean)
+  except (URLError,TimeoutError,ValueError):known=None
+  if known:return [known]
  for path in search_pages(source,term,fetch,limit=4 if ean else 6):
   url='https://'+source['host']+path
   offer=product_offer(props(fetch(source,path)),url,ean)

@@ -337,7 +337,7 @@
   function renderOnline(data,prefix) {
       $(prefix+'-rows').replaceChildren();$(prefix+'-sources').replaceChildren();let count=0;const chartItems=[];
       data.fontes.forEach(source=>{
-        const note=document.createElement('p');note.dataset.helpLabel=source.rede;note.dataset.helpKind=source.desatualizado||!source.ofertas.length?'warning':'info';note.textContent=source.rede+' — '+(source.mensagem||(source.ofertas.length?`${source.ofertas.length} oferta(s) ${source.cache?'em cache':'consultada(s)'}.`:'Sem oferta disponível com esse EAN no catálogo.'));$(prefix+'-sources').append(note);
+        const note=document.createElement('p');note.dataset.helpLabel=source.rede;note.dataset.helpKind=source.desatualizado||!source.ofertas.length?'warning':'info';note.textContent=source.rede+' — '+(source.mensagem||(source.ofertas.length?`${source.ofertas.length} oferta(s) ${source.cache?'em cache':'consultada(s)'}.`:'Nenhum preço válido retornado para este EAN, normal ou promocional. Isso não confirma falta de estoque.'));$(prefix+'-sources').append(note);
         if(source.url_consulta){const link=document.createElement('a');link.href=source.url_consulta;link.textContent='Abrir site da '+source.rede+' para consulta manual';link.target='_blank';link.rel='noopener noreferrer';note.append(' ',link);}
         if(source.aviso_descricao){const warning=document.createElement('p');warning.dataset.helpLabel='Aviso da busca';warning.dataset.helpKind='warning';warning.textContent=source.aviso_descricao;$(prefix+'-sources').append(warning);}
         if(source.candidatos?.length){
@@ -354,7 +354,7 @@
           });$(prefix+'-sources').append(box);
         }
         source.ofertas.forEach(offer=>{
-          count++;chartItems.push({grupo:source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:onlineCondition(offer)+(source.desatualizado?' · Coleta anterior':'')});const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean+(offer.correspondencia==='descricao_confirmada'?' · Escolhido por descrição nesta consulta':''));cell(row,(offer.em_oferta&&present(offer.preco_regular)?'De '+money(offer.preco_regular)+' por ':'')+money(offer.preco));cell(row,offer.condicao+' Preço da filial não confirmado.','condition-info');
+          count++;chartItems.push({grupo:source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:onlineCondition(offer)+(source.desatualizado?' · Coleta anterior':'')});const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean+(offer.correspondencia==='descricao_confirmada'?' · Escolhido por descrição nesta consulta':''));cell(row,(offer.em_oferta&&present(offer.preco_regular)?'De '+money(offer.preco_regular)+' por ':'')+money(offer.preco)+(offer.tipo_preco==='normal'?' · normal':''));cell(row,offer.condicao+' Preço da filial não confirmado.','condition-info');
           cell(row,(source.coletado_em?new Date(source.coletado_em).toLocaleString('pt-BR'):'Não informada')+(source.desatualizado?' · COLETA ANTERIOR — fonte indisponível':source.cache?' · cache':''));
           cell(row,source.lojas_no_raio.map(store=>store.nome+' — '+store.endereco+' ('+number(store.distancia_km)+' km)').join('; '));
           const target=cell(row,'');const link=document.createElement('a');link.href=offer.url;link.textContent='Conferir oferta no site';link.target='_blank';link.rel='noopener noreferrer';target.append(link);$(prefix+'-rows').append(row);

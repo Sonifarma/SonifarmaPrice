@@ -13,8 +13,12 @@ from app import composition
 HOST='www.drogariatododia.com'
 ORIGIN='https://'+HOST
 AGENT='SonifarmaPrice'
+PUBLIC_PRODUCT_URLS={'7896230304536':ORIGIN+'/soro-fisiologico-adv-10-ampolas-com-5-ml-p1112237-p4196'}
+
 class CatalogNotReady(ValueError):pass
 class ProductFormatError(ValueError):pass
+class PublicDocumentError(ValueError):
+ def __init__(self,code):super().__init__('Documento publico indisponivel ('+code+').');self.code=code
 
 NS={'s':'http://www.sitemaps.org/schemas/sitemap/0.9','i':'http://www.google.com/schemas/sitemap-image/1.1'}
 
@@ -76,7 +80,9 @@ class Browser:
   if remaining>0:time.sleep(remaining)
   self.last=time.monotonic()
   response=self.page.goto(url,wait_until='domcontentloaded',timeout=25000)
-  if response is None or response.status!=200 or not self.allowed_url(self.page.url):raise ValueError('Documento publico indisponivel.')
+  if response is None:raise PublicDocumentError('SEM_RESPOSTA')
+  if response.status!=200:raise PublicDocumentError('HTTP_'+str(response.status))
+  if not self.allowed_url(self.page.url):raise PublicDocumentError('REDIRECIONAMENTO_NAO_PERMITIDO')
   raw=response.body()
   if len(raw)>3_000_000:raise ValueError('Documento excede o limite.')
   return raw.decode('utf-8-sig')
@@ -166,6 +172,9 @@ def parse_product(raw,url,strict=False):
  for row in rows[:100]:
   if not isinstance(row,dict):continue
   ean=row.get('UPC');price=row.get('RetailPrice');stock=row.get('StockBalance')
+  if price is None:
+   regular=row.get('ListPrice')
+   price=regular if not isinstance(regular,bool) and isinstance(regular,(int,float)) and math.isfinite(regular) and 0<regular<100000 else None
   if not isinstance(ean,str) or not re.fullmatch(r'[0-9]{8,14}',ean) or ean in seen:continue
   if row.get('IsPurchasable') is not True or row.get('IsInventoryAvailable') is not True or row.get('Availability')!='I':continue
   if isinstance(price,bool) or not isinstance(price,(int,float)) or not math.isfinite(price) or not 0<price<100000:continue
@@ -176,7 +185,7 @@ def parse_product(raw,url,strict=False):
   regular=row.get('ListPrice')
   regular=round(regular,2) if not isinstance(regular,bool) and isinstance(regular,(int,float)) and math.isfinite(regular) and 0<regular<100000 else None
   seen.add(ean)
-  offers.append({'ean':ean,'produto':title,'preco':round(price,2),'preco_regular':regular,'em_oferta':bool(regular and price<regular),'moeda':'BRL','url':url,'vendedor':'Drogaria Todo Dia',
+  offers.append({'ean':ean,'produto':title,'preco':round(price,2),'preco_regular':regular,'em_oferta':bool(regular and price<regular),'tipo_preco':'oferta' if regular and price<regular else 'normal','moeda':'BRL','url':url,'vendedor':'Drogaria Todo Dia',
    'laboratorio':brand,'composicao':composition.signature(title),'abrangencia':'site_da_rede','filial_confirmada':False,
    'condicao':'Preco publico no site; CEP, frete, PBM, descontos por quantidade e disponibilidade a confirmar.','metodo':'navegador_publico'})
  return offers
@@ -197,12 +206,16 @@ def rank_urls(products,wanted,limit=8):
 
 
 def lookup(path,wanted=None,ean=None,ref=None,force=False):
- products=load_index(path)
+ try:products=load_index(path)
+ except CatalogNotReady:
+  if ean not in PUBLIC_PRODUCT_URLS:raise
+  products=[]
  with database(path) as con:rows=con.execute('SELECT * FROM tododia_paginas').fetchall()
  cached={r['url']:r for r in rows}
  # EAN ja conhecido pode ser atualizado sem repetir a descoberta por descricao.
  known=[row['url'] for row in rows if ean and any(o.get('ean')==ean for o in json.loads(row['ofertas']))]
- urls=list(dict.fromkeys(known+rank_urls(products,wanted)))[:8] if wanted else known[:8]
+ verified=[PUBLIC_PRODUCT_URLS[ean]] if ean in PUBLIC_PRODUCT_URLS else []
+ urls=list(dict.fromkeys(verified+known+(rank_urls(products,wanted) if wanted else [])))[:8]
  cutoff=(datetime.now(timezone.utc)-timedelta(minutes=15)).isoformat()
  offers=[]
  with ExitStack() as stack:
