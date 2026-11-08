@@ -8,7 +8,7 @@
   const groups = {supermercados:'Supermercados e atacarejos',perfumarias:'Perfumarias',farmacias_redes:'Farmácias de rede',farmacias_independentes:'Farmácias independentes'};
   let onlineController,onlineRequest=0,onlineScope=null,detailOnlineRequest=0;
   const onlinePending=new Map(),onlineChoices=new Map();
-  let entryAvailable = false, current = [], applied = null, offset = 0, hasMore = false, dirty = false;
+  let entryAvailable = false,periodPresets={},loadingProducts=false,appendFailed=false, current = [], applied = null, offset = 0, hasMore = false, dirty = false;
   let controller, requestId = 0, marketController, marketRequest = 0, marketItems = [];
   let detailController,detailId=0,activeProduct=null,storesController,storesId=0,storesOffset=0;
   let savedCenter=null, chosenCenter=null, centerLookupId=0, centerController;
@@ -36,16 +36,20 @@
     body.replaceChildren();const row = document.createElement('tr'), td = cell(row, text, 'empty');td.colSpan=span;body.append(row);
   }
   function updatePages() {
-    $('previous').disabled = !applied || offset === 0 || dirty;
-    $('next').disabled = !applied || !hasMore || dirty;
-    $('export').disabled = current.length === 0;
+    $('next').disabled=!applied||!hasMore||dirty||loadingProducts;
+    $('next').hidden=!hasMore&&!appendFailed;
+    $('next').textContent=appendFailed?'Tentar carregar mais novamente':'Carregar mais';
+    $('export').disabled=current.length===0;
   }
-  function periodFields() {
-    const custom = entryAvailable && $('period').value === 'intervalo';
-    $('date-start').disabled = !custom;$('date-end').disabled = !custom;
-    $('date-start').required = custom;$('date-end').required = custom;
+  function periodFields(syncDates=true) {
+    const selected=$('period').value,preset=periodPresets[selected];
+    if(syncDates&&selected!=='intervalo'&&preset){$('date-start').value=preset.inicio||'';$('date-end').value=preset.fim||'';}
+    $('date-start').disabled=false;$('date-end').disabled=false;
+    $('date-start').required=selected==='intervalo';$('date-end').required=selected==='intervalo';
     $('date-end').setCustomValidity('');
-    $('period-summary').textContent = custom ? ($('date-start').value && $('date-end').value ? `${dateBR($('date-start').value)} a ${dateBR($('date-end').value)}` : 'Selecione as datas') : $('period').selectedOptions[0].textContent;
+    const label=$('period').selectedOptions[0].textContent;
+    const range=$('date-start').value&&$('date-end').value?`${dateBR($('date-start').value)} a ${dateBR($('date-end').value)}`:$('date-end').value?'Até '+dateBR($('date-end').value):'';
+    $('period-summary').textContent=label+(range?' · '+range:'');
   }
   function validPeriod() {
     if ($('period').value === 'intervalo' && (!$('date-start').value || !$('date-end').value || $('date-start').value > $('date-end').value)) {
@@ -54,29 +58,29 @@
     }
     $('date-end').setCustomValidity('');return true;
   }
-  function markDirty() {dirty=true;updatePages();message('msg','Filtros alterados. Clique em Consultar produtos para aplicar.');}
+  function markDirty() {dirty=true;controller?.abort();requestId++;loadingProducts=false;$('product-scroll').setAttribute('aria-busy','false');updatePages();message('msg','Filtros alterados. Clique em Consultar produtos para aplicar.');}
   $('period').addEventListener('change', () => {periodFields();markDirty();});
-  ['date-start','date-end'].forEach(id => $(id).addEventListener('input', () => {periodFields();markDirty();}));
+  ['date-start','date-end'].forEach(id => $(id).addEventListener('input', () => {$('period').value='intervalo';periodFields(false);markDirty();}));
   $('period-done').addEventListener('click', () => {if(validPeriod()) $('period-filter').open=false;});
   document.addEventListener('click', event => {if(!$('period-filter').contains(event.target)) $('period-filter').open=false;});
   $('period-filter').addEventListener('keydown', event => {if(event.key==='Escape') {$('period-filter').open=false;$('period-filter').querySelector('summary').focus();}});
-  ['q','search-mode','min-margin','only-review','stock-only'].forEach(id => $(id).addEventListener('input',markDirty));
+  ['q','search-mode','min-margin','only-review','stock-only','price-type','product-status'].forEach(id => $(id).addEventListener('input',markDirty));
   function parameters() {
-    const params = new URLSearchParams({q:$('q').value,modo:$('search-mode').value,periodo:$('period').value,
+    const params = new URLSearchParams({q:$('q').value,modo:$('search-mode').value,periodo:$('period').value,data_filtro:'compra',tipo_preco:$('price-type').value,status_produto:$('product-status').value,
       margem_minima:$('min-margin').value,somente_revisar:String($('only-review').checked),somente_estoque:String($('stock-only').checked),limit:'100'});
     if($('period').value==='intervalo') {params.set('inicio',$('date-start').value);params.set('fim',$('date-end').value);}
     return params;
   }
-  function renderProducts(items) {
-    $('rows').replaceChildren();
-    if(!items.length) {empty($('rows'),'Nenhum produto encontrado com os filtros aplicados.',9);return;}
+  function renderProducts(items,append=false) {
+    if(!append)$('rows').replaceChildren();
+    if(!items.length&&!append) {empty($('rows'),'Nenhum produto encontrado com os filtros aplicados.',9);return;}
     items.forEach(item => {
-      const row=document.createElement('tr'), product=cell(row,'','product');
+      const row=document.createElement('tr'), product=cell(row,'','product');row.dataset.embalagemId=String(item.embalagem_id);
       const name=document.createElement('button');name.type='button';name.className='product-link';name.textContent=item.descricao || 'Sem descrição';name.addEventListener('click',()=>openProduct(item));product.append(name);
       const detail=document.createElement('small');detail.textContent=`EAN: ${item.ean || 'não informado'} · Código: ${item.codigo || '—'} · ${item.apresentacao || ''}`;product.append(detail);
       cell(row,money(item.preco),'num');cell(row,money(item.custo),'num');
       cell(row,present(item.margem_bruta)?number(item.margem_bruta)+'%':'—','num');
-      cell(row,number(item.estoque),'num');cell(row,number(item.vendas30),'num');cell(row,dateBR(item.ultima_entrada));
+      cell(row,number(item.estoque),'num');cell(row,number(item.vendas30),'num');cell(row,dateBR(item.ultima_compra));
       const badge=document.createElement('span');badge.className='badge '+(item.motivo_revisao==='margem_baixa'?'attention':item.revisar?'danger':'ok');badge.textContent=item.motivo_descricao;
       cell(row,'').append(badge);
       const button=document.createElement('button');button.className='small-btn';button.type='button';button.textContent='Consultar mercado';button.disabled=!item.ean&&!(item.descricao||'').trim();
@@ -85,42 +89,46 @@
       });cell(row,'').append(button);$('rows').append(row);
     });
   }
-  async function load(params, nextOffset=0) {
+  async function load(params,nextOffset=0,append=false) {
+    if(append&&(loadingProducts||dirty||!hasMore))return;
     controller?.abort();controller=new AbortController();const token=++requestId;
-    params=new URLSearchParams(params);params.set('offset',String(nextOffset));
-    $('product-scroll').setAttribute('aria-busy','true');$('previous').disabled=true;$('next').disabled=true;
-    message('msg','Consultando produtos no Alpha7…');
+    params=new URLSearchParams(params);params.set('offset',String(nextOffset));loadingProducts=true;appendFailed=false;
+    $('product-scroll').setAttribute('aria-busy','true');updatePages();
+    message('msg',append?'Carregando mais produtos…':'Consultando produtos no Alpha7…');
     try {
       const data=await json('/api/revisao/produtos?'+params,{signal:controller.signal});
       if(token!==requestId)return;
-      current=data.items;offset=nextOffset;hasMore=data.has_more;applied=new URLSearchParams(params);
+      const seen=new Set(append?current.map(row=>String(row.embalagem_id)):[]);
+      const incoming=data.items.filter(row=>{const key=String(row.embalagem_id);if(seen.has(key))return false;seen.add(key);return true;});
+      current=append?[...current,...incoming]:incoming;offset=nextOffset+data.items.length;hasMore=data.has_more;applied=new URLSearchParams(params);
       const withoutOffset=new URLSearchParams(params);withoutOffset.delete('offset');dirty=withoutOffset.toString()!==parameters().toString();
-      renderProducts(current);
+      renderProducts(incoming,append);if(!append)$('product-scroll').scrollTop=0;
       $('total').textContent=number(data.total);$('shown').textContent=number(current.length);
       $('low-margin').textContent=number(current.filter(r=>r.motivo_revisao==='margem_baixa').length);
       $('inconsistent').textContent=number(current.filter(r=>['preco_inconsistente','custo_inconsistente'].includes(r.motivo_revisao)).length);
-      $('applied').textContent=`Margem mínima do filtro: ${number(params.get('margem_minima'))}% · ${params.get('somente_revisar')==='true'?'Somente revisão':'Todos os itens'}`;
-      $('page-label').textContent=current.length?`${offset+1}–${offset+current.length}${data.total!==null?' de '+number(data.total):''}`:'Nenhum item nesta página';
-      message('msg',`${current.length} produtos exibidos${data.demo?' · DEMONSTRAÇÃO com amostras do pacote':''}. ${data.criterio}`+(dirty?' Filtros alterados durante a consulta. Clique em Consultar produtos para aplicar.':''));
-    } catch(error) {
+      $('applied').textContent=`${{liberado:'Liberado',monitorado:'Monitorado',todos:'Todos os preços'}[params.get('tipo_preco')]} · ${{ativo:'Ativo',inativo:'Inativo',todos:'Todos os status'}[params.get('status_produto')]} · Margem mínima: ${number(params.get('margem_minima'))}%`;
+      $('page-label').textContent=current.length?`${current.length} carregados${data.total!==null?' de '+number(data.total):''}`+(hasMore?' · Role para carregar mais':' · Fim da lista'):'Nenhum produto no filtro';
+      message('msg',`${current.length} produtos carregados${data.demo?' · DEMONSTRAÇÃO':''}. ${data.criterio}`+(dirty?' Filtros alterados; consulte novamente.':''));
+    }catch(error){
       if(error.name==='AbortError'||token!==requestId)return;
-      current=[];applied=null;hasMore=false;renderProducts([]);
-      ['total','shown','low-margin','inconsistent'].forEach(id=>$(id).textContent='—');$('page-label').textContent='';$('applied').textContent='';
-      message('msg',error.message,true);
-    } finally {if(token===requestId) {$('product-scroll').setAttribute('aria-busy','false');updatePages();}}
+      if(append){appendFailed=true;message('msg','Falha ao carregar mais. Itens anteriores preservados. '+error.message,true);}
+      else {current=[];applied=null;hasMore=false;renderProducts([]);['total','shown','low-margin','inconsistent'].forEach(id=>$(id).textContent='—');$('page-label').textContent='';$('applied').textContent='';message('msg',error.message,true);}
+    }finally{if(token===requestId){loadingProducts=false;$('product-scroll').setAttribute('aria-busy','false');updatePages();}}
   }
-  $('product-form').addEventListener('submit',event=>{event.preventDefault();if(validPeriod()) {$('period-filter').open=false;load(parameters());}});
-  $('previous').addEventListener('click',()=>load(applied,Math.max(0,offset-100)));
-  $('next').addEventListener('click',()=>load(applied,offset+100));
-  $('clear').addEventListener('click',()=>{
-    $('product-form').reset();$('date-start').value='';$('date-end').value='';periodFields();$('period-filter').open=false;load(parameters());
-  });
+  function loadMore(){if(applied&&!loadingProducts&&!dirty&&hasMore)load(applied,offset,true);}
+  $('product-form').addEventListener('submit',event=>{event.preventDefault();if(validPeriod()){$('period-filter').open=false;load(parameters());}});
+  $('next').addEventListener('click',loadMore);
+  $('product-scroll').addEventListener('scroll',()=>{const box=$('product-scroll');if(!appendFailed&&box.scrollTop+box.clientHeight>=box.scrollHeight-100)loadMore();});
+  const productObserver=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&!appendFailed)loadMore();},{root:$('product-scroll'),rootMargin:'0px 0px 100px 0px'});
+  productObserver.observe($('product-sentinel'));
+  $('purchase-without-date').addEventListener('click',()=>{$('period').value='todos';periodFields();$('period-filter').open=false;load(parameters());});
+  $('clear').addEventListener('click',()=>{$('product-form').reset();periodFields();$('period-filter').open=false;load(parameters());});
   $('export').addEventListener('click',()=>{
     const escape=value=>{let text=String(value??'');if(/^[\s]*[=+\-@]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
-    const columns=[['codigo','Código'],['ean','EAN'],['descricao','Produto'],['preco','Preço atual'],['custo','Custo'],['margem_bruta','Margem bruta (%)'],['estoque','Estoque'],['ultima_entrada','Última entrada'],['motivo_descricao','Motivo']];
+    const columns=[['codigo','Código'],['ean','EAN'],['descricao','Produto'],['preco','Preço atual'],['custo','Custo'],['margem_bruta','Margem bruta (%)'],['estoque','Estoque'],['ultima_compra','Última compra'],['motivo_descricao','Motivo']];
     const lines=[columns.map(c=>escape(c[1])).join(';'),...current.map(row=>columns.map(c=>escape(row[c[0]])).join(';'))];
     const url=URL.createObjectURL(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}));
-    const link=document.createElement('a');link.href=url;link.download='SonifarmaPrice_pagina_consultada.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const link=document.createElement('a');link.href=url;link.download='SonifarmaPrice_itens_carregados.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   function resetMarket() {
     clearOnline();
@@ -520,10 +528,10 @@
   });
   async function start() {
     json('/api/status').then(data=>{$('mode').textContent=data.mode==='demo'?'DEMONSTRAÇÃO':'ALPHA7 · SOMENTE LEITURA';}).catch(()=>{$('mode').textContent='Conexão indisponível';});
-    try{const data=await json('/api/revisao/opcoes');entryAvailable=data.ultima_entrada_disponivel;message('entry-note',data.mensagem);}
-    catch(error){message('entry-note','Não foi possível validar a data de entrada. '+error.message,true);}
+    try{const data=await json('/api/revisao/opcoes');entryAvailable=data.ultima_compra_disponivel;$('purchase-without-date').hidden=entryAvailable;periodPresets=Object.fromEntries((data.intervalos||[]).map(item=>[item.id,item]));message('entry-note',data.mensagem_compra||data.mensagem,!entryAvailable);}
+    catch(error){message('entry-note','Não foi possível validar a última compra. '+error.message,true);}
     try{await loadCenter();}catch(error){message('market-center','Não foi possível carregar o centro. '+error.message,true);}
-    $('period').disabled=!entryAvailable;periodFields();renderMarket();clearStores();load(parameters());
+    $('period').disabled=false;periodFields();renderMarket();clearStores();load(parameters());
   }
   start();
 })();

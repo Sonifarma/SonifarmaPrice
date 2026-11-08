@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.3.0')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.4.0')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
@@ -25,7 +25,7 @@ def demo_rows():
   p=prod.get(e['produtoid']);
   if not p:continue
   c=costs.get(p['id'],{}); s=stocks.get(e['id'],{})
-  result.append(dict(produto_id=p['id'],codigo=p['codigo'],descricao=p['descricao'],status=p['status'],embalagem_id=e['id'],ean=e['codigobarras'],apresentacao=e['descricao'],quantidade=e['quantidadeporembalagem'],preco=e['precovenda'],custo=c.get('custo'),customedio=c.get('customedio'),estoque=s.get('estoque'),vendas30=None,faturamento30=None))
+  result.append(dict(produto_id=p['id'],codigo=p['codigo'],descricao=p['descricao'],status=p['status'],tipo_preco=p.get('tipopreco'),embalagem_id=e['id'],ean=e['codigobarras'],apresentacao=e['descricao'],quantidade=e['quantidadeporembalagem'],preco=e['precovenda'],custo=c.get('custo'),customedio=c.get('customedio'),estoque=s.get('estoque'),vendas30=None,faturamento30=None))
  return result
 
 SQL='''SELECT p.id AS produto_id,p.codigo,p.descricao,p.status,e.id AS embalagem_id,e.codigobarras AS ean,e.descricao AS apresentacao,e.quantidadeporembalagem AS quantidade,e.precovenda AS preco,c.custo,c.customedio,s.estoque,COALESCE(g.vendas30,0) AS vendas30,COALESCE(g.faturamento30,0) AS faturamento30 FROM produto p JOIN embalagem e ON e.produtoid=p.id LEFT JOIN LATERAL (SELECT cp.custo,cp.customedio FROM custoproduto cp WHERE cp.produtoid=p.id AND cp.unidadenegocioid=%s ORDER BY cp.id DESC LIMIT 1) c ON TRUE LEFT JOIN LATERAL (SELECT es.estoque FROM estoque es WHERE es.embalagemid=e.id AND es.unidadenegocioid=%s ORDER BY es.id DESC LIMIT 1) s ON TRUE LEFT JOIN (SELECT iv.embalagemid,SUM(iv.quantidade) AS vendas30,SUM(iv.valortotal) AS faturamento30 FROM itemvenda iv JOIN venda v ON v.id=iv.vendaid WHERE v.unidadenegocioid=%s AND iv.unidadenegocioid=%s AND v.status='F' AND iv.status='F' AND v.datahorafechamento >= CURRENT_DATE - INTERVAL '30 days' GROUP BY iv.embalagemid) g ON g.embalagemid=e.id WHERE (%s='' OR p.descricao ILIKE %s OR CAST(p.codigo AS TEXT) ILIKE %s OR e.codigobarras ILIKE %s) ORDER BY p.descricao,e.id LIMIT %s OFFSET %s'''
