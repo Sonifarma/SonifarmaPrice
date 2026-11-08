@@ -167,7 +167,7 @@ def make_router(path,distance):
     @router.put('/{tipo}/{identificador}/grupo')
     def group(tipo:str,identificador:int,body:StoreGroup,request:Request,x_price_config:str|None=Header(default=None)):
         mutation(request,x_price_config)
-        if tipo not in {'node','way','relation'} or identificador<=0 or body.grupo not in GROUPS:raise HTTPException(422,'Grupo ou identificador invalido.')
+        if tipo not in {'node','way','relation','manual'} or identificador<=0 or body.grupo not in GROUPS:raise HTTPException(422,'Grupo ou identificador invalido.')
         key=f'{tipo}/{identificador}'
         from app.competitors import set_group
         set_group(path(),key,body.grupo,body.motivo.strip())
