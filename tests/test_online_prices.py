@@ -101,3 +101,13 @@ class OnlineApiTests(unittest.TestCase):
   self.assertEqual(len(manual['lojas_no_raio']),2)
   self.assertEqual(manual['url_consulta'],'https://www.drogariatododia.com/')
   with online.database(self.path) as con:self.assertEqual(con.execute("SELECT count(*) FROM catalogos_online WHERE fonte='tododia'").fetchone()[0],0)
+
+ def test_groups_follow_shared_registry_without_duplicating_network_offer(self):
+  competitors.set_group(self.path,'node/1','farmacias_redes')
+  competitors.set_group(self.path,'node/2','farmacias_redes')
+  with patch.object(online,'catalog',side_effect=self.provider):data=self.request().json()
+  self.assertEqual(data['fontes'][0]['grupo'],'farmacias_redes')
+  self.assertEqual(len(data['fontes'][0]['ofertas']),1)
+  competitors.set_group(self.path,'node/2','farmacias_independentes')
+  with patch.object(online,'catalog',side_effect=AssertionError('cache')):data=self.request().json()
+  self.assertIsNone(data['fontes'][0]['grupo'])

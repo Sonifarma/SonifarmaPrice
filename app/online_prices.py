@@ -142,6 +142,12 @@ def matches(store,source):
  return normalized(store['nome']) in source['nomes'] or bool(store.get('cnpj') and store['cnpj'].startswith(source['cnpj_raiz']))
 
 
+
+def group_for_stores(stores):
+ groups={store['grupo'] for store in stores if store.get('grupo')}
+ return next(iter(groups)) if len(groups)==1 else None
+
+
 def make_router(path,distance):
  router=APIRouter(prefix='/api/mercado/online',tags=['Precos publicos dos sites'])
  @router.post('/consultar')
@@ -156,13 +162,13 @@ def make_router(path,distance):
    if not related:continue
    supported.update(store['id'] for store in related)
    result=query_source(path(),key,body.ean)
-   result.update(fonte=key,rede=source['nome'],lojas_no_raio=[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related])
+   result.update(fonte=key,rede=source['nome'],grupo=group_for_stores(related),lojas_no_raio=[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related])
    results.append(result)
   for key,source in MANUAL_SOURCES.items():
    related=[store for store in stores if matches(store,source)]
    if not related:continue
    supported.update(store['id'] for store in related)
-   results.append({'fonte':key,'rede':source['nome'],'estado':'consulta_manual','ofertas':[],
+   results.append({'fonte':key,'rede':source['nome'],'grupo':group_for_stores(related),'estado':'consulta_manual','ofertas':[],
     'coletado_em':None,'cache':False,'desatualizado':False,'url_consulta':'https://'+source['host']+'/',
     'mensagem':'Consulta automatica pendente. O teste de acesso respondeu HTTP 403; abra o site e pesquise o EAN manualmente. Nenhum preco foi coletado desta fonte.',
     'lojas_no_raio':[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related]})
