@@ -12,9 +12,7 @@ O cache por fonte/composição dura 15 minutos. Em falhas, mantém preços anter
 
 ## Drogaria Todo Dia
 
-Em 08/11/2026, as requisições diretas deste ambiente para a página inicial, robots.txt, produto público e caminho de catálogo responderam HTTP 403; uma requisição HEAD também retornou 405/manutenção. Isso pode coexistir com o funcionamento do site no navegador do usuário. O site usa uma estrutura diferente das APIs públicas já integradas; não foi habilitado como se fosse VTEX.
-
-A fonte segue com link manual e sem preços coletados. A mensagem agora distingue acesso no navegador de disponibilidade da integração, identifica a data da verificação e não sugere que preços foram obtidos. Não usa valores de snippets indexados como preços atuais. A integração automática precisa de um acesso público permitido ou API disponibilizada pela loja.
+Na V1.5.0, a fonte ficou em consulta manual porque o acesso HTTP direto retornou 403. A V1.5.1 confirmou acesso por Chromium comum (HTTP 200) e integrou as páginas públicas, usando o sitemap da loja para descoberta. Consulte `TODO_DIA_NAVEGADOR.md` para preparo e limitações. A fonte agora participa também da comparação por composição, quando as informações de apresentação conferem.
 
 ## Validação
 

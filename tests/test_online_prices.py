@@ -88,19 +88,20 @@ class OnlineApiTests(unittest.TestCase):
    with search_center.database(self.path) as con:con.execute('DELETE FROM centro_pesquisa')
    self.assertEqual(self.request().status_code,422)
 
- def test_todo_dia_appears_as_manual_source_without_automatic_requests_or_prices(self):
+ def test_todo_dia_uses_browser_adapter_and_shared_radius_registry(self):
   competitors.register(self.path,[{'fonte_id':'node/11','nome':'Drogaria Todo Dia','latitude':.001,'longitude':0,'endereco':'Rua teste'},
     {'fonte_id':'node/12','nome':'Droga Todo Dia','latitude':.002,'longitude':0,'endereco':'Avenida teste'},
     {'fonte_id':'node/13','nome':'Drogaria Tododia','latitude':1,'longitude':0,'endereco':'Fora do raio'}],competitors.now())
-  with patch.object(online,'catalog',side_effect=self.provider) as fetch:data=self.request().json()
-  self.assertEqual(fetch.call_count,2)
+  offer=dict(ean=EAN,produto='Produto Todo Dia',preco=9.1,url='https://www.drogariatododia.com/produto-p123',condicao='Preco publico')
+  with patch.object(online,'catalog',side_effect=self.provider) as fetch,patch.object(online.todo_dia,'lookup',return_value=[offer]) as browser:data=self.request().json()
+  self.assertEqual(fetch.call_count,2);self.assertEqual(browser.call_count,1)
   manual=next(r for r in data['fontes'] if r['fonte']=='tododia')
-  self.assertEqual(manual['estado'],'consulta_manual')
-  self.assertEqual(manual['ofertas'],[])
-  self.assertIsNone(manual['coletado_em'])
+  self.assertEqual(manual['estado'],'consultado')
+  self.assertEqual(manual['ofertas'][0]['preco'],9.1)
+  self.assertIsNotNone(manual['coletado_em'])
   self.assertEqual(len(manual['lojas_no_raio']),2)
-  self.assertEqual(manual['url_consulta'],'https://www.drogariatododia.com/')
-  with online.database(self.path) as con:self.assertEqual(con.execute("SELECT count(*) FROM catalogos_online WHERE fonte='tododia'").fetchone()[0],0)
+  self.assertNotIn('url_consulta',manual)
+  with online.database(self.path) as con:self.assertEqual(con.execute("SELECT count(*) FROM catalogos_online WHERE fonte='tododia'").fetchone()[0],1)
 
  def test_groups_follow_shared_registry_without_duplicating_network_offer(self):
   competitors.set_group(self.path,'node/1','farmacias_redes')

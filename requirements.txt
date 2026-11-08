@@ -4,3 +4,4 @@ psycopg2-binary>=2.9,<3
 python-dotenv>=1,<2
 python-multipart>=0.0.9,<1
 tzdata>=2024,<2028
+playwright>=1.49,<2
