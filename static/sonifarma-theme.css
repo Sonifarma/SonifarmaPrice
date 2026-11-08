@@ -9,3 +9,5 @@
 .chart .bar{background:#56c51c}.chart .bar.medium{background:#ffb31a}.chart .bar.high{background:#ff515b}
 
 .description-candidate{padding:12px 0;border-bottom:1px solid var(--line)}.description-candidate strong{display:block;overflow-wrap:anywhere}.description-candidate button{margin-left:12px}.description-candidate p{margin:8px 0}
+
+#product-sentinel{height:1px}#period-summary{white-space:normal}.period-popover{min-width:290px}

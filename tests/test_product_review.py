@@ -12,10 +12,10 @@ from app import product_review as review
 
 
 ROWS = [
-    {'produto_id':1,'embalagem_id':11,'codigo':'001','descricao':'Produto A','ean':'4006381333931','apresentacao':'20 unidades','preco':'10','custo':'8','estoque':5,'vendas30':2,'ultima_entrada':'2026-11-07T18:00:00'},
-    {'produto_id':2,'embalagem_id':22,'codigo':'002','descricao':'Produto B','ean':'96385074','apresentacao':'10 unidades','preco':'10','custo':'4','estoque':0,'vendas30':1,'ultima_entrada':'2026-11-06T23:59:59'},
-    {'produto_id':3,'embalagem_id':33,'codigo':'003','descricao':'Produto C','ean':'04006381333931','preco':'10','custo':None,'estoque':4,'vendas30':0,'ultima_entrada':'2026-10-20T08:00:00'},
-    {'produto_id':4,'embalagem_id':44,'codigo':'004','descricao':'Produto D','ean':None,'preco':'0','custo':'5','estoque':1,'vendas30':0,'ultima_entrada':None},
+    {'status':'A','tipo_preco':'L','ultima_compra':'2026-11-07T18:00:00','produto_id':1,'embalagem_id':11,'codigo':'001','descricao':'Produto A','ean':'4006381333931','apresentacao':'20 unidades','preco':'10','custo':'8','estoque':5,'vendas30':2,'ultima_entrada':'2026-11-07T18:00:00'},
+    {'status':'A','tipo_preco':'L','ultima_compra':'2026-11-06T23:59:59','produto_id':2,'embalagem_id':22,'codigo':'002','descricao':'Produto B','ean':'96385074','apresentacao':'10 unidades','preco':'10','custo':'4','estoque':0,'vendas30':1,'ultima_entrada':'2026-11-06T23:59:59'},
+    {'status':'A','tipo_preco':'L','ultima_compra':'2026-10-20T08:00:00','produto_id':3,'embalagem_id':33,'codigo':'003','descricao':'Produto C','ean':'04006381333931','preco':'10','custo':None,'estoque':4,'vendas30':0,'ultima_entrada':'2026-10-20T08:00:00'},
+    {'status':'A','tipo_preco':'L','ultima_compra':'2026-10-20T08:00:00','produto_id':4,'embalagem_id':44,'codigo':'004','descricao':'Produto D','ean':None,'preco':'0','custo':'5','estoque':1,'vendas30':0,'ultima_entrada':None},
 ]
 
 

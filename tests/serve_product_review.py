@@ -1,4 +1,5 @@
 """Servidor de desenvolvimento com dados ficticios para o teste de navegador."""
+from datetime import datetime
 import importlib.util
 import os
 from pathlib import Path
@@ -8,11 +9,16 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ['MODE'] = 'demo'
-from app import main, search_center, local_stores, competitors, online_prices
+from app import main, search_center, local_stores, competitors, online_prices, product_review
 import uvicorn
 
 
 def run():
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            return cls(2026,11,8,12,tzinfo=tz)
+    product_review.datetime=FixedDatetime
     spec = importlib.util.spec_from_file_location('review_fixtures', ROOT / 'tests' / 'test_product_review.py')
     fixtures = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fixtures)
