@@ -263,6 +263,34 @@
     });
     if(summaries.size>12){const note=document.createElement('p');note.textContent='Gráfico limitado aos primeiros 12 grupos/condições. A tabela mantém todas as observações.';chart.append(note);}
   }
+  function renderComposition(data,chart) {
+    const panel=document.createElement('section');panel.className='panel composition-panel';
+    const heading=document.createElement('h3');heading.textContent='Mesma composição — todos os laboratórios';panel.append(heading);
+    const note=document.createElement('p');note.className='muted';note.textContent=data?.mensagem||'Comparação por composição indisponível.';panel.append(note);
+    if(!data?.referencia){chart.append(panel);return;}
+    const ref=data.referencia,summary=document.createElement('p');summary.textContent=[ref.principio_ativo,ref.doses.join(' + '),ref.forma,ref.quantidade?ref.quantidade+' unidades':'',ref.volumes_ml.length?ref.volumes_ml.join(' / ')+' mL':'',...ref.modificadores].filter(Boolean).join(' · ');panel.append(summary);
+    const states=document.createElement('p');states.className='muted';states.textContent=data.fontes.map(s=>s.rede+': '+s.estado+(s.coletado_em?' · '+new Date(s.coletado_em).toLocaleString('pt-BR'):'')).join('; ');panel.append(states);
+    const offers=(data.ofertas||[]).filter(o=>Number.isFinite(Number(o.preco))&&Number(o.preco)>0);
+    if(!offers.length){const empty=document.createElement('p');empty.textContent='Nenhum preço com composição e apresentação completas nas fontes consultadas.';panel.append(empty);chart.append(panel);return;}
+    const groupsFound=new Map();offers.forEach(o=>{const key=JSON.stringify([o.grupo||'Grupo pendente',o.condicao+(o.desatualizado?' · Coleta anterior':'')]);if(!groupsFound.has(key))groupsFound.set(key,[]);groupsFound.get(key).push(o);});
+    const maximum=Math.max(...offers.map(o=>Number(o.preco)));
+    [...groupsFound].slice(0,12).forEach(([key,items])=>{
+      items.sort((a,b)=>Number(a.preco)-Number(b.preco));const [group,condition]=JSON.parse(key);
+      const box=document.createElement('div');box.className='chart-group';const title=document.createElement('h3');title.textContent=groups[group]||group;box.append(title);
+      const info=document.createElement('p');info.className='muted';info.textContent=condition+' · '+items.length+' ofertas · passe o mouse, use Tab ou clique nas barras';box.append(info);
+      const bars=document.createElement('div');bars.className='bars';const details=document.createElement('div');details.className='composition-details';details.setAttribute('aria-live','polite');
+      const show=(label,value,records)=>{
+        details.replaceChildren();const caption=document.createElement('p');caption.textContent=label+': '+money(value)+(label==='Média'?' · média aritmética das '+records.length+' ofertas abaixo':'');details.append(caption);
+        records.forEach(o=>{const row=document.createElement('p');const link=document.createElement('a');link.href=o.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=o.produto;row.append(link, ' · '+(o.laboratorio||'Laboratório não informado')+' · '+o.rede+' · EAN '+o.ean+' · '+money(o.preco)+' · '+(o.coletado_em?new Date(o.coletado_em).toLocaleString('pt-BR'):'Data não informada'));details.append(row);});
+      };
+      const average=items.reduce((sum,o)=>sum+Number(o.preco),0)/items.length;
+      [['Menor',Number(items[0].preco),'',items.filter(o=>Number(o.preco)===Number(items[0].preco))],['Média',average,'medium',items],['Maior',Number(items.at(-1).preco),'high',items.filter(o=>Number(o.preco)===Number(items.at(-1).preco))]].forEach(([label,value,style,records])=>{
+        const col=document.createElement('button');col.type='button';col.className='bar-col composition-bar';col.dataset.summary=label;col.dataset.price=String(value);col.setAttribute('aria-label',label+' '+money(value)+' — mostrar produtos');col.title=label==='Média'?'Média das ofertas: '+records.map(o=>o.produto+' ('+money(o.preco)+')').join('; '):records.map(o=>o.produto+' · '+o.rede+' · '+money(o.preco)).join('; ');
+        const price=document.createElement('span');price.textContent=money(value);const bar=document.createElement('span');bar.className='bar '+style;bar.style.height=(value/maximum*92)+'px';const caption=document.createElement('span');caption.textContent=label;col.append(price,bar,caption);
+        ['mouseenter','focus','click'].forEach(event=>col.addEventListener(event,()=>show(label,value,records)));bars.append(col);
+      });box.append(bars,details);panel.append(box);
+    });chart.append(panel);
+  }
   function renderMarket(){renderMarketInto(marketItems.filter(r=>!$('market-group').value||r.grupo===$('market-group').value),$('marketrows'),$('market-chart'));}
   ['eanmerc','market-days','raiomerc'].forEach(id=>$(id).addEventListener('input',()=>{
     marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;
@@ -330,6 +358,7 @@
       if(data.sem_integracao.length){const note=document.createElement('p');note.textContent='Lojas ainda sem integração de preços: '+data.sem_integracao.join(', ')+'.';$(prefix+'-sources').append(note);}
       message(prefix+'-message',`${count} oferta(s) de site para ${data.ean?'EAN '+data.ean:'a descrição informada'}. `+(data.busca_normalizada?' Busca: '+data.busca_normalizada+'. ':'')+(data.fontes.length?data.aviso:'Nenhuma rede integrada foi identificada no cadastro dentro do raio. Busque ou confira os concorrentes cadastrados.'));
       renderPriceChart(chartItems,$(prefix+'-chart'),'Nenhum preço online obtido para este EAN. Confira o estado das fontes acima.');
+      renderComposition(data.composicao,$(prefix+'-chart'));
   }
   function clearOnline() {
     onlineController?.abort();onlineRequest++;onlineScope=null;$('online-search').disabled=false;$('online-refresh').disabled=false;$('online-sources').replaceChildren();$('online-chart').replaceChildren();

@@ -53,6 +53,7 @@ def run():
             'condicao':'Preco ficticio para teste','abrangencia':'site_da_rede','filial_confirmada':False}
         return [{'ean':offer['ean'],'produto':title,'marca':'Medley','url':offer['url'],'oferta':offer,**match}]
     online_prices.description_catalog=description_fixture
+    online_prices.composition_catalog=lambda source,ref: []
     # Geocodificador ficticio: o teste de navegador nao acessa servico externo.
     search_center.geocode = lambda address: [{'endereco':'Rua demonstrativa, 10, Cidade de teste, Brasil','latitude':0.0,'longitude':0.0,'tipo':'house'}]
     with tempfile.TemporaryDirectory() as directory:

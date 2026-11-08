@@ -17,6 +17,7 @@ from pydantic import BaseModel,Field
 from app.competitors import within_radius,normalized
 from app.search_center import get_center,mutation
 from app.product_search import profile,compare
+from app import composition
 
 SOURCES={
  'drogal':{'nome':'Drogal','host':'www.drogal.com.br','nomes':{'DROGAL'},'cnpj_raiz':'54375647','vendedores':{'DROGAL'}},
@@ -25,7 +26,7 @@ SOURCES={
 MANUAL_SOURCES={'tododia':{'nome':'Drogaria Todo Dia','host':'www.drogariatododia.com',
  'nomes':{'DROGARIA TODO DIA','DROGA TODO DIA','DROGARIA TODODIA'},'cnpj_raiz':'12834185'}}
 
-AGENT='SonifarmaPrice/1.3.0 (+https://github.com/Sonifarma/SonifarmaPrice)'
+AGENT='SonifarmaPrice/1.5.0 (+https://github.com/Sonifarma/SonifarmaPrice)'
 log=logging.getLogger(__name__)
 locks={key:threading.Lock() for key in SOURCES}
 last_request={}
@@ -118,7 +119,9 @@ def parse_offers(products,source,ean):
     result.append({'ean':ean,'produto':str(product.get('productName') or item.get('name') or '')[:300],
       'preco':round(price,2),'moeda':'BRL','url':url,'vendedor':str(seller.get('sellerName'))[:100],
       'condicao':'Preco basico do catalogo; ha promocoes condicionadas a conferir no site.' if conditional else 'Preco do catalogo; condicoes, CEP, frete e disponibilidade a confirmar no site.',
-      'abrangencia':'site_da_rede','filial_confirmada':False})
+      'abrangencia':'site_da_rede','filial_confirmada':False,
+      'laboratorio':str(product.get('brand') or '')[:100],
+      'composicao':composition.signature(str(product.get('productName') or item.get('name') or ''),composition.ingredient(product,str(product.get('productName') or item.get('name') or '')))})
  return result[:20]
 
 
@@ -186,6 +189,58 @@ def query_description(path,key,wanted):
  finally:locks[key].release()
 
 
+def composition_catalog(source,ref):
+ products=catalog_data(source,'/api/catalog_system/pub/products/search/'+quote(composition.query_text(ref),safe=''))
+ offers=[];seen=set()
+ for product in products:
+  if not isinstance(product,dict):continue
+  for item in product.get('items') or []:
+   if not isinstance(item,dict):continue
+   ean=item.get('ean','')
+   if not isinstance(ean,str) or not re.fullmatch(r'[0-9]{8,14}',ean) or ean in seen:continue
+   found=parse_offers([dict(product,items=[item])],source,ean)
+   for offer in found:
+    # O nome do SKU tambem precisa concordar com a apresentacao quando informado.
+    sku=profile(str(item.get('name') or ''))
+    conflict=any(sku[k] and sku[k]!=ref[target] for k,target in [('doses','doses'),('forma','forma'),('quantidade','quantidade')])
+    if offer.get('composicao')==ref and not conflict:
+     seen.add(ean);offers.append(offer);break
+ return offers[:30]
+
+
+def query_composition(path,key,ref):
+ fingerprint='composicao-v1:'+hashlib.sha256(json.dumps(ref,sort_keys=True).encode()).hexdigest()
+ with database(path) as con:row=con.execute('SELECT * FROM catalogos_descricao WHERE fonte=? AND chave=?',(key,fingerprint)).fetchone()
+ cutoff=(datetime.now(timezone.utc)-timedelta(minutes=15)).isoformat()
+ if row and row['coletado_em']>=cutoff:
+  return dict(ofertas=json.loads(row['candidatos']),coletado_em=row['coletado_em'],desatualizado=False,estado='cache')
+ if not locks[key].acquire(blocking=False):return dict(ofertas=[],coletado_em=None,desatualizado=False,estado='ocupado')
+ try:
+  offers=composition_catalog(SOURCES[key],ref);timestamp=now()
+  with database(path) as con:con.execute('INSERT INTO catalogos_descricao VALUES(?,?,?,?) ON CONFLICT(fonte,chave) DO UPDATE SET coletado_em=excluded.coletado_em,candidatos=excluded.candidatos',(key,fingerprint,timestamp,json.dumps(offers,ensure_ascii=False)))
+  return dict(ofertas=offers,coletado_em=timestamp,desatualizado=False,estado='consultado')
+ except Exception as exc:
+  log.warning('Composicao %s indisponivel (%s)',key,type(exc).__name__)
+  return dict(ofertas=json.loads(row['candidatos']) if row else [],coletado_em=row['coletado_em'] if row else None,desatualizado=True,estado='indisponivel')
+ finally:locks[key].release()
+
+
+def composition_results(path,description,ean,sources):
+ ref=composition.reference(description,sources,ean)
+ if ref is None:return {'referencia':None,'ofertas':[],'fontes':[],'mensagem':'Composicao, concentracao ou apresentacao incompleta. Nao foi possivel comparar outros laboratorios com seguranca.'}
+ offers=[];states=[];seen=set()
+ for source in sources:
+  if source['fonte'] not in SOURCES:continue
+  result=query_composition(path,source['fonte'],ref)
+  states.append({'rede':source['rede'],'estado':result['estado'],'coletado_em':result['coletado_em']})
+  for offer in result['ofertas']:
+   identity=(source['fonte'],offer['ean'])
+   if identity in seen:continue
+   seen.add(identity)
+   offers.append(dict(offer,rede=source['rede'],grupo=source['grupo'],coletado_em=result['coletado_em'],desatualizado=result['desatualizado']))
+ return {'referencia':ref,'ofertas':offers,'fontes':states,'mensagem':'Comparacao de precos pela composicao e apresentacao informadas no catalogo, independente do laboratorio. Nao indica substituicao de medicamento.'}
+
+
 class OnlineSearch(BaseModel):
  ean:str|None=Field(default=None,pattern=r'^[0-9]{8,14}$')
  descricao:str=Field(default='',max_length=180)
@@ -244,8 +299,8 @@ def make_router(path,distance):
    supported.update(store['id'] for store in related)
    results.append({'fonte':key,'rede':source['nome'],'grupo':group_for_stores(related),'estado':'consulta_manual','ofertas':[],
     'coletado_em':None,'cache':False,'desatualizado':False,'url_consulta':'https://'+source['host']+'/',
-    'mensagem':'Consulta automatica pendente. O teste de acesso respondeu HTTP 403; abra o site e pesquise o EAN manualmente. Nenhum preco foi coletado desta fonte.',
+    'mensagem':'Acesso automatizado indisponivel nesta integracao (HTTP 403 na verificacao de 08/11/2026). O site pode abrir normalmente no navegador. Consulte manualmente; nenhum preco desta fonte foi incluido.',
     'lojas_no_raio':[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related]})
-  return {'ean':body.ean,'centro':center,'raio_km':body.raio,'descricao_original':body.descricao.strip(),'busca_normalizada':wanted['descricao'] if wanted else None,'links_pesquisa':[{'nome':name,'url':'https://www.google.com/search?'+urlencode({'q':'site:'+host+' '+wanted['descricao']})} for name,host in [('Drogasil','www.drogasil.com.br'),('Droga Raia','www.drogaraia.com.br')]] if wanted else [],'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
+  return {'composicao':composition_results(path(),body.descricao,body.ean,results),'ean':body.ean,'centro':center,'raio_km':body.raio,'descricao_original':body.descricao.strip(),'busca_normalizada':wanted['descricao'] if wanted else None,'links_pesquisa':[{'nome':name,'url':'https://www.google.com/search?'+urlencode({'q':'site:'+host+' '+wanted['descricao']})} for name,host in [('Drogasil','www.drogasil.com.br'),('Droga Raia','www.drogaraia.com.br')]] if wanted else [],'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
     'aviso':'Precos dos sites das redes com lojas cadastradas no raio. O valor e a disponibilidade na filial fisica nao foram confirmados. Nao inclui frete ou beneficios pessoais; confira as condicoes na fonte. Estes valores nao sao incorporados ao grafico de observacoes locais.'}
  return router
