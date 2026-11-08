@@ -114,6 +114,7 @@ def parse_offers(products,source,ean):
     if not isinstance(seller,dict) or str(seller.get('sellerId'))!='1' or normalized(seller.get('sellerName','')) not in source['vendedores']:continue
     offer=seller.get('commertialOffer') or {}
     price=offer.get('Price');quantity=offer.get('AvailableQuantity')
+    if price is None:price=raia.money(offer.get('ListPrice'))
     if offer.get('IsAvailable') is not True or offer.get('CurrencyCode','BRL')!='BRL':continue
     if isinstance(price,bool) or not isinstance(price,(int,float)) or not math.isfinite(price) or not 0<price<100000:continue
     if isinstance(quantity,bool) or not isinstance(quantity,(int,float)) or not math.isfinite(quantity) or quantity<=0:continue
@@ -125,7 +126,7 @@ def parse_offers(products,source,ean):
     regular=raia.money(offer.get('ListPrice'))
     conditional=any(offer.get(k) for k in ['Teasers','PromotionTeasers','BuyTogether','DiscountHighLight'])
     result.append({'ean':ean,'produto':str(product.get('productName') or item.get('name') or '')[:300],
-      'preco':round(price,2),'preco_regular':regular,'em_oferta':bool(regular and price<regular),'moeda':'BRL','url':url,'vendedor':str(seller.get('sellerName'))[:100],
+      'preco':round(price,2),'preco_regular':regular,'em_oferta':bool(regular and price<regular),'tipo_preco':'oferta' if regular and price<regular else 'normal','moeda':'BRL','url':url,'vendedor':str(seller.get('sellerName'))[:100],
       'condicao':'Preco basico do catalogo; ha promocoes condicionadas a conferir no site.' if conditional else 'Preco do catalogo; condicoes, CEP, frete e disponibilidade a confirmar no site.',
       'abrangencia':'site_da_rede','filial_confirmada':False,
       'laboratorio':str(product.get('brand') or '')[:100],
@@ -134,6 +135,7 @@ def parse_offers(products,source,ean):
 
 
 def failure_code(exc):
+ if isinstance(exc,(raia.RaiaReadError,todo_dia.PublicDocumentError)):return exc.code
  if isinstance(exc,HTTPError):return 'HTTP '+str(exc.code)
  if isinstance(exc,TimeoutError):return 'TEMPO_ESGOTADO'
  if isinstance(exc,ssl.SSLError) or (isinstance(exc,URLError) and isinstance(exc.reason,ssl.SSLError)):return 'CONEXAO_TLS'

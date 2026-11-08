@@ -71,3 +71,23 @@ class RaiaTests(unittest.TestCase):
    self.assertTrue(online.matches({'nome':name},online.SOURCES['raia']))
   self.assertTrue(online.matches({'nome':'Farmácia da região','site':'https://www.drogaraia.com.br/'},online.SOURCES['raia']))
   self.assertFalse(online.matches({'nome':'Drogasil','site':'https://www.drogaraia.com.br/'},online.SOURCES['raia']))
+
+ def test_normal_price_is_used_when_promotion_fields_are_absent(self):
+  normal=data();p=normal['productData'];p['liveComposition']['livePrice']['valueTo']=None;p['price_aux']['value_to']=None
+  offer=raia.product_offer(normal,URL,EAN)
+  self.assertEqual(offer['preco'],20);self.assertFalse(offer['em_oferta']);self.assertEqual(offer['tipo_preco'],'normal')
+  products=catalog_fixture();products[0]['items'][0]['sellers'][0]['commertialOffer'].update(Price=None,ListPrice=25)
+  offer=online.parse_offers(products,online.SOURCES['drogal'],EAN)[0]
+  self.assertEqual(offer['preco'],25);self.assertFalse(offer['em_oferta']);self.assertEqual(offer['tipo_preco'],'normal')
+  product=todo_product();product['Items'][0].update(RetailPrice=None,PromotionPrice=None,ListPrice=18)
+  offer=todo_dia.parse_product(todo_html(product),TODO_URL)[0]
+  self.assertEqual(offer['preco'],18);self.assertFalse(offer['em_oferta']);self.assertEqual(offer['tipo_preco'],'normal')
+ def test_verified_product_path_avoids_search_dependency_but_still_requires_matching_ean(self):
+  known=copy.deepcopy(data());known['productData']['productEan']='7896230304536'
+  for item in known['productData']['custom_attributes']:
+   if item['attribute_code']=='ean':item['value_string']=['7896230304536']
+   if item['attribute_code']=='url_key':item['value_string']=['adv-solucao-fisiologica-com-10-ampolas']
+  calls=[]
+  def fetch(source,path):calls.append(path);return document(known)
+  offers=raia.offers(online.SOURCES['raia'],'7896230304536',fetch,ean='7896230304536')
+  self.assertEqual(offers[0]['ean'],'7896230304536');self.assertEqual(calls,['/adv-solucao-fisiologica-com-10-ampolas.html'])

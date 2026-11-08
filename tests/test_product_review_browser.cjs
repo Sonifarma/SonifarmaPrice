@@ -141,11 +141,12 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     assert.equal(route.request().postDataJSON().atualizar,true);
     return route.fulfill({json:{ean:route.request().postDataJSON().ean,sem_integracao:[],aviso:'Teste de precos publicos',fontes_nao_consultadas:[{rede:'Drogaria Todo Dia',motivo:'Nenhuma loja identificada no raio atual.'}],fontes:[
       {fonte:'drogal',rede:'Drogal',grupo:'farmacias_redes',coletado_em:'2026-11-08T12:00:00Z',lojas_no_raio:[],ofertas:[{ean:'7896230304536',produto:'Soro ADV 10 ampolas 5ml',preco:21.49,condicao:'Preco do catalogo; condicoes a confirmar.',url:'https://www.drogal.com.br/teste/p'}]},
-      {fonte:'raia',rede:'Droga Raia',grupo:'farmacias_redes',coletado_em:'2026-11-08T12:00:00Z',lojas_no_raio:[],ofertas:[{ean:'7896230304536',produto:'Soro ADV 10 ampolas 5ml',preco:14.99,condicao:'Preco publico no site; CEP, frete e disponibilidade a confirmar.',url:'https://www.drogaraia.com.br/teste.html'}]}
+      {fonte:'raia',rede:'Droga Raia',grupo:'farmacias_redes',coletado_em:'2026-11-08T12:00:00Z',lojas_no_raio:[],ofertas:[{ean:'7896230304536',produto:'Soro ADV 10 ampolas 5ml',preco:14.99,tipo_preco:'normal',condicao:'Preco publico no site; CEP, frete e disponibilidade a confirmar.',url:'https://www.drogaraia.com.br/teste.html'}]}
     ]}});
   };
   await page.route('**/api/mercado/online/consultar',publicComparison);await page.locator('#detail-online-refresh').click();
   await page.locator('#detail-online-message').filter({hasText:'2 oferta(s) de site'}).waitFor({state:'attached'});
+  assert.match(await page.locator('#detail-online-rows tr').filter({hasText:'Droga Raia'}).innerText(),/14,99.*normal/);
   const combined=page.locator('#detail-online-chart > .chart-group');assert.equal(await combined.count(),1);
   assert.equal(Number(await combined.locator('[data-summary=Menor]').getAttribute('data-price')),14.99);
   assert.equal(Number(await combined.locator('[data-summary=Média]').getAttribute('data-price')),18.24);

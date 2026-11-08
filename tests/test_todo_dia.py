@@ -75,3 +75,17 @@ class TodoDiaTests(unittest.TestCase):
   with self.assertRaises(todo.ProductFormatError):todo.parse_product('<html>Loja em manutencao</html>',URL,strict=True)
   data=product();data['Items']=[{'ean':EAN,'preco':10}]
   with self.assertRaises(todo.ProductFormatError):todo.parse_product(html(data),URL,strict=True)
+
+ def test_verified_saline_page_can_be_read_without_an_index_and_rejects_different_ean(self):
+  ean='7896230304536';url=todo.PUBLIC_PRODUCT_URLS[ean]
+  data=product();data['Url']=url.split('.com',1)[1];data['Items'][0]['UPC']=ean
+  with tempfile.TemporaryDirectory() as temp:
+   path=Path(temp)/'local.sqlite3'
+   with patch.object(todo,'Browser') as browser:
+    browser.return_value.__enter__.return_value.get.return_value=html(data)
+    offers=todo.lookup(path,ean=ean,force=True)
+   self.assertEqual(offers[0]['ean'],ean)
+   data['Items'][0]['UPC']='7890000000000'
+   with patch.object(todo,'Browser') as browser:
+    browser.return_value.__enter__.return_value.get.return_value=html(data)
+    self.assertEqual(todo.lookup(path,ean=ean,force=True),[])
