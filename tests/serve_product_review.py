@@ -38,6 +38,15 @@ def run():
         'preco':12.34,'moeda':'BRL','url':'https://www.drogal.com.br/produto-ficticio/p',
         'vendedor':'Drogal','condicao':'Preco de teste do catalogo, filial nao confirmada',
         'abrangencia':'site_da_rede','filial_confirmada':False}]
+    def description_fixture(source,wanted):
+        title='Simeticona 40mg Medley 20 Comprimidos'
+        match=online_prices.compare(wanted,title,'Medley')
+        if match is None:return []
+        offer={'ean':'7896422522823','produto':title,'preco':17.89,'moeda':'BRL',
+            'url':'https://www.drogal.com.br/simeticona-ficticia/p','vendedor':'Drogal',
+            'condicao':'Preco ficticio para teste','abrangencia':'site_da_rede','filial_confirmada':False}
+        return [{'ean':offer['ean'],'produto':title,'marca':'Medley','url':offer['url'],'oferta':offer,**match}]
+    online_prices.description_catalog=description_fixture
     # Geocodificador ficticio: o teste de navegador nao acessa servico externo.
     search_center.geocode = lambda address: [{'endereco':'Rua demonstrativa, 10, Cidade de teste, Brasil','latitude':0.0,'longitude':0.0,'tipo':'house'}]
     with tempfile.TemporaryDirectory() as directory:

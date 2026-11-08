@@ -41,3 +41,8 @@ Selecionar um produto inicia a consulta online quando centro e raio estão váli
 Abrir a ficha consulta também os preços online do EAN, além das observações importadas. São fontes independentes: falha ou ausência de CSV não impede consultar os sites. O painel online da ficha e o da pesquisa usam o mesmo renderizador e compartilham requisições simultâneas do mesmo EAN, raio e centro.
 
 O gráfico usa menor preço em verde, **média aritmética** em amarelo e maior preço em vermelho, separado por grupo e condição comercial. A média é soma dos preços dividida pela quantidade de ofertas, não mediana. Não há preenchimento com zero para grupos sem ofertas. Uma oferta da rede não é multiplicada por suas filiais. O grupo vem do cadastro compartilhado dos concorrentes: classificações ausentes ou conflitantes ficam como grupo pendente. Condições diferentes e coletas anteriores são separadas; o preço do site não confirma a oferta na filial. O gráfico de observações importadas também passa a mostrar média aritmética.
+
+
+## Busca por descrição — V1.3.0
+
+A busca por EAN agora pode ser complementada pela descrição normalizada, com expansão de abreviações, candidatos separados e escolha da apresentação. Veja [Busca por descrição](BUSCA_POR_DESCRICAO.md). O uso de um EAN de candidato diferente fica explícito e não altera o cadastro do ERP.

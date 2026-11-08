@@ -4,16 +4,19 @@ from datetime import datetime,timedelta,timezone
 import json
 import logging
 import math
+import hashlib
+import re
 import sqlite3
 import threading
 import time
-from urllib.parse import urlencode,urlsplit
+from urllib.parse import urlencode,urlsplit,quote
 from urllib.request import Request as URLRequest,HTTPRedirectHandler,build_opener
 from urllib.robotparser import RobotFileParser
 from fastapi import APIRouter,Header,HTTPException,Request
 from pydantic import BaseModel,Field
 from app.competitors import within_radius,normalized
 from app.search_center import get_center,mutation
+from app.product_search import profile,compare
 
 SOURCES={
  'drogal':{'nome':'Drogal','host':'www.drogal.com.br','nomes':{'DROGAL'},'cnpj_raiz':'54375647','vendedores':{'DROGAL'}},
@@ -22,7 +25,7 @@ SOURCES={
 MANUAL_SOURCES={'tododia':{'nome':'Drogaria Todo Dia','host':'www.drogariatododia.com',
  'nomes':{'DROGARIA TODO DIA','DROGA TODO DIA','DROGARIA TODODIA'},'cnpj_raiz':'12834185'}}
 
-AGENT='SonifarmaPrice/1.2.1 (+https://github.com/Sonifarma/SonifarmaPrice)'
+AGENT='SonifarmaPrice/1.3.0 (+https://github.com/Sonifarma/SonifarmaPrice)'
 log=logging.getLogger(__name__)
 locks={key:threading.Lock() for key in SOURCES}
 last_request={}
@@ -38,6 +41,7 @@ def database(path):
  with closing(sqlite3.connect(path,timeout=10)) as con:
   con.row_factory=sqlite3.Row
   con.execute('CREATE TABLE IF NOT EXISTS catalogos_online (fonte TEXT,ean TEXT,coletado_em TEXT NOT NULL,ofertas TEXT NOT NULL,PRIMARY KEY(fonte,ean))')
+  con.execute('CREATE TABLE IF NOT EXISTS catalogos_descricao (fonte TEXT,chave TEXT,coletado_em TEXT NOT NULL,candidatos TEXT NOT NULL,PRIMARY KEY(fonte,chave))')
   with con:yield con
 
 
@@ -67,7 +71,12 @@ def fetch_bytes(host,path,limit):
 
 
 def catalog(source,ean):
- host=source['host'];path='/api/catalog_system/pub/products/search?'+urlencode({'fq':'alternateIds_Ean:'+ean})
+ path='/api/catalog_system/pub/products/search?'+urlencode({'fq':'alternateIds_Ean:'+ean})
+ return parse_offers(catalog_data(source,path),source,ean)
+
+
+def catalog_data(source,path):
+ host=source['host']
  cached=robots_cache.get(host)
  if not cached or time.monotonic()-cached[0]>86400:
   raw=fetch_bytes(host,'/robots.txt',200_000)
@@ -82,7 +91,7 @@ def catalog(source,ean):
  raw=fetch_bytes(host,path,2_000_000)
  data=json.loads(raw)
  if not isinstance(data,list) or len(data)>50:raise ValueError('Formato inesperado do catalogo.')
- return parse_offers(data,source,ean)
+ return data
 
 
 def parse_offers(products,source,ean):
@@ -132,8 +141,55 @@ def query_source(path,key,ean):
  finally:locks[key].release()
 
 
+def description_catalog(source,wanted):
+ if not wanted['consulta']:return []
+ path='/api/catalog_system/pub/products/search/'+quote(wanted['consulta'],safe='')
+ products=catalog_data(source,path);candidates=[];seen=set()
+ for product in products:
+  if not isinstance(product,dict):continue
+  url=public_link(product.get('link'),source['host'])
+  if not url:continue
+  for item in product.get('items') or []:
+   if not isinstance(item,dict):continue
+   ean=item.get('ean','')
+   if not isinstance(ean,str) or not re.fullmatch(r'[0-9]{8,14}',ean) or ean in seen:continue
+   title=str(product.get('productName') or '')[:300]
+   match=compare(wanted,title+' '+str(item.get('name') or ''),str(product.get('brand') or ''))
+   if match is None:continue
+   sku=profile(str(item.get('name') or ''))
+   if any(wanted[k] and sku[k] and wanted[k]!=sku[k] for k in ['doses','quantidade','forma']):continue
+   if wanted['tamanho']:
+    size=re.search(r'\b(XXG|XG|GG|G|M|P)\b',normalized(str(item.get('name') or '')))
+    if size and size.group(1)!=wanted['tamanho']:continue
+   # parse_offers ainda exige vendedor proprio, disponibilidade e EAN identico no SKU.
+   offers=parse_offers([dict(product,items=[item])],source,ean)
+   seen.add(ean)
+   candidates.append({'ean':ean,'produto':title,'marca':str(product.get('brand') or '')[:100],'url':url,
+     'oferta':offers[0] if offers else None,**match})
+ return sorted(candidates,key=lambda c:(bool(c['oferta']),c['pontuacao']),reverse=True)[:6]
+
+
+def query_description(path,key,wanted):
+ fingerprint=hashlib.sha256(wanted['descricao'].encode()).hexdigest()
+ with database(path) as con:row=con.execute('SELECT * FROM catalogos_descricao WHERE fonte=? AND chave=?',(key,fingerprint)).fetchone()
+ cutoff=(datetime.now(timezone.utc)-timedelta(minutes=15)).isoformat()
+ if row and row['coletado_em']>=cutoff:
+  return {'candidatos':json.loads(row['candidatos']),'coletado_em':row['coletado_em'],'cache':True,'desatualizado':False}
+ if not locks[key].acquire(blocking=False):return {'candidatos':[],'coletado_em':None,'cache':False,'desatualizado':False,'mensagem':'Busca por descricao em andamento nesta fonte. Aguarde e atualize.'}
+ try:
+  candidates=description_catalog(SOURCES[key],wanted);timestamp=now()
+  with database(path) as con:con.execute('INSERT INTO catalogos_descricao VALUES(?,?,?,?) ON CONFLICT(fonte,chave) DO UPDATE SET coletado_em=excluded.coletado_em,candidatos=excluded.candidatos',(key,fingerprint,timestamp,json.dumps(candidates,ensure_ascii=False)))
+  return {'candidatos':candidates,'coletado_em':timestamp,'cache':False,'desatualizado':False}
+ except Exception as exc:
+  log.warning('Busca por descricao %s indisponivel (%s)',key,type(exc).__name__)
+  return {'candidatos':json.loads(row['candidatos']) if row else [],'coletado_em':row['coletado_em'] if row else None,'cache':bool(row),'desatualizado':True,'mensagem':'Busca por descricao indisponivel. Resultados anteriores, quando presentes, mantem a data original.'}
+ finally:locks[key].release()
+
+
 class OnlineSearch(BaseModel):
- ean:str=Field(pattern=r'^[0-9]{8,14}$')
+ ean:str|None=Field(default=None,pattern=r'^[0-9]{8,14}$')
+ descricao:str=Field(default='',max_length=180)
+ selecoes:dict[str,str]=Field(default_factory=dict,max_length=2)
  raio:float=Field(2,ge=.5,le=50)
  centro_versao:int=Field(ge=1)
 
@@ -153,6 +209,9 @@ def make_router(path,distance):
  @router.post('/consultar')
  def search(body:OnlineSearch,request:Request,x_price_config:str|None=Header(default=None)):
   mutation(request,x_price_config)
+  if not body.ean and len(body.descricao.strip())<3:raise HTTPException(422,'Informe EAN ou descricao com ao menos tres caracteres.')
+  if any(key not in SOURCES or not re.fullmatch(r'[0-9]{8,14}',value) for key,value in body.selecoes.items()):raise HTTPException(422,'Selecao de produto invalida.')
+  wanted=profile(body.descricao) if body.descricao.strip() else None
   center=get_center(path())
   if center is None:raise HTTPException(422,'Cadastre o centro da pesquisa.')
   if center['versao']!=body.centro_versao:raise HTTPException(409,'Centro alterado. Recarregue o cadastro.')
@@ -161,7 +220,22 @@ def make_router(path,distance):
    related=[store for store in stores if matches(store,source)]
    if not related:continue
    supported.update(store['id'] for store in related)
-   result=query_source(path(),key,body.ean)
+   result=query_source(path(),key,body.ean) if body.ean else {'ofertas':[],'coletado_em':None,'cache':False,'desatualizado':False,'estado':'descricao'}
+   if wanted and (not result['ofertas'] or key in body.selecoes):
+    found=query_description(path(),key,wanted);candidates=found['candidatos']
+    selected=body.selecoes.get(key)
+    confirmed=next((c for c in candidates if c['ean']==selected and c['oferta']),None) if selected else None
+    exact=next((c for c in candidates if c['ean']==body.ean and c['oferta']),None)
+    chosen=confirmed or (exact if not selected else None)
+    result['candidatos']=candidates
+    result['candidatos_coletado_em']=found['coletado_em']
+    if chosen:
+     result.update(ofertas=[dict(chosen['oferta'],correspondencia='descricao_confirmada' if confirmed else 'ean')],coletado_em=found['coletado_em'],cache=found['cache'],desatualizado=found['desatualizado'],estado='descricao_confirmada' if confirmed else 'ean_por_descricao')
+     result.pop('mensagem',None)
+    elif selected:result.update(ofertas=[],mensagem='O candidato selecionado nao esta mais disponivel nesta busca. Confira novamente a apresentacao.')
+    elif candidates:result['mensagem']='Produtos encontrados por descricao. Confira apresentacao e EAN e escolha o correspondente para incluir o preco no grafico.'
+    elif found.get('mensagem'):result['mensagem']=found['mensagem']
+    if found.get('desatualizado'):result['aviso_descricao']='Busca por descricao com coleta anterior; confira a data.'
    result.update(fonte=key,rede=source['nome'],grupo=group_for_stores(related),lojas_no_raio=[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related])
    results.append(result)
   for key,source in MANUAL_SOURCES.items():
@@ -172,6 +246,6 @@ def make_router(path,distance):
     'coletado_em':None,'cache':False,'desatualizado':False,'url_consulta':'https://'+source['host']+'/',
     'mensagem':'Consulta automatica pendente. O teste de acesso respondeu HTTP 403; abra o site e pesquise o EAN manualmente. Nenhum preco foi coletado desta fonte.',
     'lojas_no_raio':[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related]})
-  return {'ean':body.ean,'centro':center,'raio_km':body.raio,'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
+  return {'ean':body.ean,'centro':center,'raio_km':body.raio,'descricao_original':body.descricao.strip(),'busca_normalizada':wanted['descricao'] if wanted else None,'links_pesquisa':[{'nome':name,'url':'https://www.google.com/search?'+urlencode({'q':'site:'+host+' '+wanted['descricao']})} for name,host in [('Drogasil','www.drogasil.com.br'),('Droga Raia','www.drogaraia.com.br')]] if wanted else [],'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
     'aviso':'Precos dos sites das redes com lojas cadastradas no raio. O valor e a disponibilidade na filial fisica nao foram confirmados. Nao inclui frete ou beneficios pessoais; confira as condicoes na fonte. Estes valores nao sao incorporados ao grafico de observacoes locais.'}
  return router
