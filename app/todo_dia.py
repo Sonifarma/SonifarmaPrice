@@ -41,6 +41,8 @@ def database(path):
 
 
 class Browser:
+ def __init__(self,host=HOST,validator=safe_url):
+  self.origin='https://'+host;self.allowed_url=validator
  def __enter__(self):
   from playwright.sync_api import sync_playwright
   self.driver=sync_playwright().start()
@@ -55,9 +57,9 @@ class Browser:
    self.browser=self.driver.chromium.launch(**options)
    self.context=self.browser.new_context(java_script_enabled=False,accept_downloads=False)
    # Apenas documentos publicos: sem anuncios, rastreadores, scripts ou imagens.
-   self.context.route('**/*',lambda route:route.continue_() if route.request.resource_type=='document' and safe_url(route.request.url) else route.abort())
+   self.context.route('**/*',lambda route:route.continue_() if route.request.resource_type=='document' and self.allowed_url(route.request.url) else route.abort())
    self.page=self.context.new_page();self.last=0;self.robots=None
-   raw=self.get(ORIGIN+'/robots.txt')
+   raw=self.get(self.origin+'/robots.txt')
    self.robots=RobotFileParser();self.robots.parse(raw.splitlines())
    return self
   except Exception:
@@ -67,14 +69,14 @@ class Browser:
    if self.browser:self.browser.close()
   finally:self.driver.stop()
  def get(self,url):
-  if not safe_url(url):raise ValueError('URL fora do catalogo publico cadastrado.')
+  if not self.allowed_url(url):raise ValueError('URL fora do catalogo publico cadastrado.')
   if self.robots and not self.robots.can_fetch(AGENT,url):raise ValueError('Caminho nao permitido pela fonte.')
   delay=max(1,self.robots.crawl_delay(AGENT) or 0) if self.robots else 1
   remaining=delay-(time.monotonic()-self.last)
   if remaining>0:time.sleep(remaining)
   self.last=time.monotonic()
   response=self.page.goto(url,wait_until='domcontentloaded',timeout=25000)
-  if response is None or response.status!=200 or not safe_url(self.page.url):raise ValueError('Documento publico indisponivel.')
+  if response is None or response.status!=200 or not self.allowed_url(self.page.url):raise ValueError('Documento publico indisponivel.')
   raw=response.body()
   if len(raw)>3_000_000:raise ValueError('Documento excede o limite.')
   return raw.decode('utf-8-sig')

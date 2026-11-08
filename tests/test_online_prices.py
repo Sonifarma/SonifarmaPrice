@@ -141,3 +141,11 @@ class OnlineApiTests(unittest.TestCase):
   with patch.object(online,'catalog',side_effect=self.provider):data=self.request().json()
   omitted=next(source for source in data['fontes_nao_consultadas'] if source['fonte']=='raia')
   self.assertIn('raio',omitted['motivo']);self.assertNotIn('raia',[source['fonte'] for source in data['fontes']])
+
+ def test_description_failure_does_not_hide_initial_ean_failure(self):
+  with patch.object(online,'catalog',side_effect=TimeoutError()),patch.object(online,'description_catalog',side_effect=ValueError()):
+   data=self.request(descricao='Produto ficticio').json()
+  source=data['fontes'][0]
+  self.assertIn('Consulta por EAN indisponivel (TEMPO_ESGOTADO)',source['mensagem'])
+  self.assertIn('Busca por descricao indisponivel (ValueError)',source['mensagem'])
+  self.assertNotIn('com coleta anterior',source['aviso_descricao'])

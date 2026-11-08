@@ -37,3 +37,7 @@ Para renovar o índice depois de mudanças no catálogo, pare o Price e execute 
 ## Validação real
 
 Consulta integrada por EAN e descrição verificada em 08/11/2026: `SIMETICONA 40MG 20CPR MEDLEY`, EAN `7896422522823`, R$ 8,47. O índice preparado continha 17.229 URLs de produtos. Outra página pública verificada: `SIMETICONA 75MG GOTAS 15ML MEDLEY`, EAN `7896422504744`, preço de venda R$ 9,10 em 08/11/2026. A disponibilidade e o preço variam; esse valor não é embutido no código. Os testes usam produtos fictícios para conferir EAN, preço de SKU, indisponibilidade, marketplace, cache, índice incompleto, origem das URLs e integração por raio.
+
+## Normalização de ampolas — V1.7.2
+
+A descoberta corrige descrições como C/10 AMP 5ML para localizar 10 ampolas de 5ml no índice, preservando quantidade e volume. Depois de atualizar, use Atualizar preços online para renovar caches vazios anteriores. Veja [Concorrentes e coleta](CONCORRENTES_E_COLETA_V1_7_2.md).

@@ -1,7 +1,9 @@
 """Dados publicos renderizados pela Droga Raia; sem checkout, conta ou marketplace."""
 from html.parser import HTMLParser
-import json,math,re
-from urllib.parse import urlencode,urlsplit
+import json,math,re,logging
+from urllib.parse import urlencode,urlsplit,parse_qs
+from urllib.error import URLError
+from app.todo_dia import Browser
 from app import composition
 from app.product_search import profile,compare,text
 
@@ -77,7 +79,7 @@ def search_pages(source,term,fetch,limit=6):
  return urls
 
 
-def offers(source,term,fetch,ean=None,wanted=None,ref=None):
+def _offers(source,term,fetch,ean=None,wanted=None,ref=None):
  result=[];seen=set()
  for path in search_pages(source,term,fetch,limit=4 if ean else 6):
   url='https://'+source['host']+path
@@ -92,3 +94,25 @@ def offers(source,term,fetch,ean=None,wanted=None,ref=None):
   seen.add(offer['ean'])
   if ean:break
  return result
+
+
+def browser_url(url):
+ try:
+  parsed=urlsplit(url)
+  if parsed.scheme!='https' or parsed.hostname!='www.drogaraia.com.br' or parsed.port not in {None,443} or parsed.username or parsed.password or parsed.fragment or '\\' in url or any(ord(c)<33 for c in url):return False
+  if parsed.path=='/search':
+   query=parse_qs(parsed.query,max_num_fields=1)
+   return set(query)=={'w'} and len(query['w'])==1 and 0<len(query['w'][0])<=300
+  return not parsed.query and (parsed.path=='/robots.txt' or bool(re.fullmatch(r'/[a-z0-9-]+\.html',parsed.path)))
+ except (ValueError,TypeError):return False
+
+
+def offers(source,term,fetch,ean=None,wanted=None,ref=None):
+ try:return _offers(source,term,fetch,ean,wanted,ref)
+ except (URLError,TimeoutError,ValueError) as exc:
+  logging.getLogger(__name__).warning('Raia: acesso direto indisponivel (%s); tentando navegador publico.',type(exc).__name__)
+  with Browser(host=source['host'],validator=browser_url) as browser:
+   result=_offers(source,term,lambda source,path:browser.get('https://'+source['host']+path),ean,wanted,ref)
+  for row in result:
+   offer=row.get('oferta',row);offer['metodo']='navegador_publico'
+  return result

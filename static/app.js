@@ -449,7 +449,7 @@
     const label=document.createElement('span');label.dataset.role='store-group';label.textContent=(groups[store.grupo]||'Grupo pendente')+(withDistance?' · '+row.dataset.storeDistance:'');
     return label;
   }
-  function groupControls(container,store,messageId) {
+  function groupControls(container,store,messageId,compact=false) {
     const select=document.createElement('select');select.setAttribute('aria-label','Grupo de '+store.nome);select.add(new Option('Selecione o grupo',''));Object.entries(groups).forEach(([key,label])=>select.add(new Option(label,key)));select.value=store.grupo||'';
     const reason=document.createElement('input');reason.placeholder='Motivo (opcional)';reason.maxLength=300;reason.setAttribute('aria-label','Motivo da classificação de '+store.nome);
     const save=document.createElement('button');save.type='button';save.className='small-btn';save.textContent='Confirmar grupo';
@@ -469,7 +469,12 @@
         if(activeProduct?.ean&&$('product-dialog').open)loadDetailOnline();
       }catch(error){message(messageId,error.message,true);}finally{save.disabled=false;}
     });
-    const controls=document.createElement('div');controls.className='store-review';controls.append(select,reason,save);container.append(controls);
+    const controls=document.createElement('div');controls.className='store-review';
+    if(compact){
+      controls.classList.add('directory-group-controls');save.textContent='Salvar';save.setAttribute('aria-label','Confirmar grupo');save.title='Confirmar grupo';
+      const extra=document.createElement('details');extra.className='directory-group-reason';const summary=document.createElement('summary');summary.textContent='Motivo opcional';extra.append(summary,reason);controls.append(select,save,extra);
+    }else controls.append(select,reason,save);
+    container.append(controls);
   }
   function renderStores(rows) {
     $('stores-rows').replaceChildren();if(!rows.length){empty($('stores-rows'),'Nenhum concorrente cadastrado neste raio. Busque novas lojas para complementar o cadastro.',6);return;}
@@ -519,7 +524,7 @@
   let competitorOffset=0,competitorRequest=0;
   async function loadCompetitors() {
     const token=++competitorRequest;
-    if(!savedCenter){empty($('competitors-rows'),'Cadastre o centro da pesquisa para consultar concorrentes.',4);message('competitors-message','Centro ainda não cadastrado.');return;}
+    if(!savedCenter){$('competitors-count').textContent='Centro pendente';$('competitors-page').textContent='';empty($('competitors-rows'),'Cadastre o centro da pesquisa para consultar concorrentes.',4);message('competitors-message','Centro ainda não cadastrado.');return;}
     const radius=Number($('raiomerc').value);
     if(!Number.isFinite(radius)||radius<0.5||radius>50){message('competitors-message','Informe um raio entre 0,5 e 50 km na pesquisa de mercado.',true);return;}
     message('competitors-message','Carregando cadastro salvo…');
@@ -529,26 +534,37 @@
       $('competitors-rows').replaceChildren();
       if(!data.items.length)empty($('competitors-rows'),'Nenhum concorrente salvo neste filtro. Busque novas lojas no raio.',4);
       data.items.forEach(store=>{
-        const row=document.createElement('tr');cell(row,store.nome+' — '+store.endereco);const group=cell(row,'');group.append(groupLabel(row,store,true));groupControls(group,store,'competitors-message');
-        const links=cell(row,'');
-        for(const [url,label] of [[store.site,'Site declarado'],[store.fonte_url,'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';links.append(a,document.createElement('br'));}
-        const details=cell(row,'');const text=document.createElement('p');
-        const info=store.dados_cnpj;
+        const row=document.createElement('tr');row.className='directory-row';
+        const location=cell(row,'','directory-location');location.dataset.label='Loja / localização';
+        const name=document.createElement('strong');name.textContent=store.nome;
+        const address=document.createElement('small');address.textContent=store.endereco||'Endereço não informado';
+        const distance=document.createElement('span');distance.className='badge';distance.textContent=number(store.distancia_km)+' km';location.append(name,address,distance);
+        const group=cell(row,'','directory-group');group.dataset.label='Grupo';group.append(groupLabel(row,store));groupControls(group,store,'competitors-message',true);
+        const links=cell(row,'','directory-sites');links.dataset.label='Sites e fontes';const sites=document.createElement('div');sites.className='directory-site-links';
+        for(const [url,label] of [[store.site,'Site da loja'],[store.fonte_url,'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';sites.append(a);}
+        if(!store.site){const missing=document.createElement('span');missing.className='muted';missing.textContent='Site não informado';sites.prepend(missing);}links.append(sites);
+        const details=cell(row,'','directory-registration');details.dataset.label='CNPJ / cadastro';
+        const info=store.dados_cnpj,failed=store.cnpj_status==='falha_consulta';
         const identified=store.cnpj_origem?.startsWith('Pesquisa de filial por endereco - ');
-        text.textContent=info?`${info.razao_social||''} · ${info.descricao_situacao_cadastral||''} · CNAE ${info.cnae_fiscal||''}: ${info.cnae_fiscal_descricao||''}. Consulta: ${dateBR(info.consultado_em)}. ${identified?'Filial identificada por endereço.':'Confira o vínculo com esta filial.'}`:'CNPJ ainda não identificado com segurança. A loja continua disponível na pesquisa de mercado.';
+        const badge=document.createElement('span');badge.className='badge '+(failed?'danger':info?.descricao_situacao_cadastral==='ATIVA'?'ok':'attention');badge.textContent=failed?'Falha na consulta':info?'CNPJ consultado':store.cnpj?'Aguardando consulta':'Sem CNPJ';details.append(badge);
+        const metadata=document.createElement('div');metadata.dataset.helpLabel='Dados cadastrais';metadata.dataset.helpKind=failed||!identified?'warning':'info';
+        const text=document.createElement('p');text.textContent=info?`${info.razao_social||''} · ${info.descricao_situacao_cadastral||''} · CNAE ${info.cnae_fiscal||''}: ${info.cnae_fiscal_descricao||''}. Consulta: ${dateBR(info.consultado_em)}. ${identified?'Filial identificada por endereço.':'Confira o vínculo com esta filial.'}`:'CNPJ ainda não identificado com segurança. A loja continua disponível na pesquisa de mercado.';
+        metadata.append(text);
         if(info){
-          const fiscal=document.createElement('p');fiscal.dataset.helpKeep='true';fiscal.className='muted';fiscal.textContent='Endereço cadastral: '+[info.descricao_tipo_de_logradouro,info.logradouro,info.numero,info.complemento,info.municipio,info.uf].filter(Boolean).join(' · ');details.append(fiscal);
-          const source=document.createElement('a');source.href='https://brasilapi.com.br/api/cnpj/v1/'+store.cnpj;source.textContent='Fonte dos dados cadastrais';source.target='_blank';source.rel='noopener noreferrer';details.append(source);
+          const fiscal=document.createElement('p');fiscal.textContent='Endereço cadastral: '+[info.descricao_tipo_de_logradouro,info.logradouro,info.numero,info.complemento,info.municipio,info.uf].filter(Boolean).join(' · ');metadata.append(fiscal);
+          const source=document.createElement('a');source.href='https://brasilapi.com.br/api/cnpj/v1/'+store.cnpj;source.textContent='Fonte dos dados cadastrais';source.target='_blank';source.rel='noopener noreferrer';metadata.append(source);
         }
-        if(store.cnpj_status==='falha_consulta')text.textContent+=' A última tentativa falhou; os dados anteriores foram preservados.';
-        const input=document.createElement('input');input.value=store.cnpj||'';input.maxLength=30;input.placeholder='CNPJ desta filial';input.setAttribute('aria-label','CNPJ de '+store.nome);
-        const button=document.createElement('button');button.type='button';button.textContent='Consultar CNPJ';
+        if(failed)text.textContent+=' A última tentativa falhou; os dados anteriores foram preservados.';
+        details.append(metadata);
+        const input=document.createElement('input');input.value=store.cnpj||'';input.maxLength=30;input.inputMode='numeric';input.placeholder='CNPJ desta filial';input.setAttribute('aria-label','CNPJ de '+store.nome);
+        const button=document.createElement('button');button.type='button';button.className='small-btn';button.textContent='Consultar CNPJ';
         button.addEventListener('click',async()=>{button.disabled=true;try{const result=await json('/api/concorrentes/'+store.id+'/cnpj',{method:'POST',headers:configHeaders(),body:JSON.stringify({cnpj:input.value})});await loadCompetitors();message('competitors-message',result.mensagem);}catch(error){message('competitors-message',error.message,true);}finally{button.disabled=false;}});
-        details.append(text,input,button);$('competitors-rows').append(row);
+        const fields=document.createElement('div');fields.className='directory-cnpj-row';fields.append(input,button);details.append(fields);$('competitors-rows').append(row);
       });
       $('competitors-previous').disabled=competitorOffset===0;$('competitors-next').disabled=!data.has_more;
+      $('competitors-count').textContent=number(data.total)+' no filtro';$('competitors-page').textContent=data.items.length?`${competitorOffset+1}–${competitorOffset+data.items.length} de ${number(data.total)} concorrentes`:'Nenhum concorrente no filtro';
       message('competitors-message',`${data.total} concorrentes salvos no filtro · raio ${radius} km · ${data.centro.endereco}. Exibidos ${data.items.length}.`+(data.cnpjs_preenchidos?` ${data.cnpjs_preenchidos} CNPJs identificados foram preenchidos automaticamente.`:'' ));
-    }catch(error){if(token===competitorRequest){empty($('competitors-rows'),'Cadastro não carregado.',4);message('competitors-message',error.message,true);}}
+    }catch(error){if(token===competitorRequest){$('competitors-count').textContent='Consulta indisponível';$('competitors-page').textContent='';empty($('competitors-rows'),'Cadastro não carregado.',4);message('competitors-message',error.message,true);}}
   }
   $('competitors-form').addEventListener('submit',event=>{event.preventDefault();competitorOffset=0;loadCompetitors();});
   $('competitors-previous').addEventListener('click',()=>{competitorOffset=Math.max(0,competitorOffset-100);loadCompetitors();});
