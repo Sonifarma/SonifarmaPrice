@@ -27,3 +27,7 @@ Sem dependência nova nesta versão. Quem já preparou a Todo Dia na V1.5.1 pode
 ## Alternativa de acesso — V1.7.2
 
 Falhas no acesso direto agora acionam leitura pública por Chromium. A mensagem por EAN não é mais substituída por uma falha posterior de descrição. Veja instalação, diagnóstico e critérios de reconhecimento em [Concorrentes e coleta](CONCORRENTES_E_COLETA_V1_7_2.md).
+
+## Leitura normal no Windows — V1.7.4
+
+A alternativa da Raia agora usa JavaScript ativo e, no Windows, uma janela temporária do navegador do sistema. A Todo Dia conserva seu modo anterior. Veja [configuração, diagnóstico e limites](RAIA_NAVEGADOR_WINDOWS_V1_7_4.md).

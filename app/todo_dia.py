@@ -45,23 +45,28 @@ def database(path):
 
 
 class Browser:
- def __init__(self,host=HOST,validator=safe_url):
-  self.origin='https://'+host;self.allowed_url=validator
+ def __init__(self,host=HOST,validator=safe_url,render=False,visible=False):
+  self.origin='https://'+host;self.allowed_url=validator;self.render=render;self.visible=visible;self.trace=[]
  def __enter__(self):
   from playwright.sync_api import sync_playwright
   self.driver=sync_playwright().start()
-  options={'headless':True}
+  options={'headless':not self.visible}
   proxy=os.getenv('HTTPS_PROXY') or os.getenv('https_proxy')
   if proxy:options['proxy']={'server':proxy}
-  executable=os.getenv('PRICE_BROWSER_EXECUTABLE','').strip()
+  executable=getattr(self,'preferred_executable',None) or os.getenv('PRICE_BROWSER_EXECUTABLE','').strip()
   if executable:options['executable_path']=executable
   elif os.name!='nt' and Path('/usr/bin/chromium').exists():options['executable_path']='/usr/bin/chromium'
   self.browser=None
   try:
    self.browser=self.driver.chromium.launch(**options)
-   self.context=self.browser.new_context(java_script_enabled=False,accept_downloads=False)
-   # Apenas documentos publicos: sem anuncios, rastreadores, scripts ou imagens.
-   self.context.route('**/*',lambda route:route.continue_() if route.request.resource_type=='document' and self.allowed_url(route.request.url) else route.abort())
+   self.context=self.browser.new_context(java_script_enabled=self.render,accept_downloads=False)
+   def route_request(route):
+    request=route.request
+    if request.resource_type=='document' and request.frame.parent_frame is None:
+     allowed=self.allowed_url(request.url)
+    else:allowed=self.render and urlsplit(request.url).scheme in {'https','data','blob'}
+    route.continue_() if allowed else route.abort()
+   self.context.route('**/*',route_request)
    self.page=self.context.new_page();self.last=0;self.robots=None
    raw=self.get(self.origin+'/robots.txt')
    self.robots=RobotFileParser();self.robots.parse(raw.splitlines())
@@ -80,10 +85,18 @@ class Browser:
   if remaining>0:time.sleep(remaining)
   self.last=time.monotonic()
   response=self.page.goto(url,wait_until='domcontentloaded',timeout=25000)
-  if response is None:raise PublicDocumentError('SEM_RESPOSTA')
-  if response.status!=200:raise PublicDocumentError('HTTP_'+str(response.status))
+  phase='ROBOTS' if urlsplit(url).path=='/robots.txt' else 'PAGINA'
+  self.trace.append({'etapa':phase,'caminho':urlsplit(url).path,'http':response.status if response else None})
+  if response is None:raise PublicDocumentError('SEM_RESPOSTA_'+phase)
+  if response.status!=200:raise PublicDocumentError('HTTP_'+str(response.status)+'_'+phase)
   if not self.allowed_url(self.page.url):raise PublicDocumentError('REDIRECIONAMENTO_NAO_PERMITIDO')
-  raw=response.body()
+  if self.render and phase=='PAGINA':
+   from playwright.sync_api import TimeoutError as BrowserTimeout
+   try:self.page.wait_for_load_state('load',timeout=5000)
+   except BrowserTimeout:pass
+   if not self.allowed_url(self.page.url):raise PublicDocumentError('REDIRECIONAMENTO_NAO_PERMITIDO')
+   raw=self.page.content().encode('utf-8')
+  else:raw=response.body()
   if len(raw)>3_000_000:raise ValueError('Documento excede o limite.')
   return raw.decode('utf-8-sig')
 

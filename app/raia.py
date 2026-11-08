@@ -1,6 +1,7 @@
 """Dados publicos renderizados pela Droga Raia; sem checkout, conta ou marketplace."""
 from html.parser import HTMLParser
-import json,math,re,logging
+import json,math,re,logging,os
+from pathlib import Path
 from urllib.parse import urlencode,urlsplit,parse_qs
 from urllib.error import URLError
 from app.todo_dia import Browser
@@ -121,12 +122,41 @@ def browser_url(url):
  except (ValueError,TypeError):return False
 
 
+def browser_mode(platform=None):
+ mode=os.getenv('PRICE_RAIA_BROWSER_MODE','auto').strip().lower()
+ if mode not in {'auto','visible','headless'}:raise RaiaReadError('MODO_NAVEGADOR_INVALIDO','Modo Raia invalido: use auto, visible ou headless.')
+ return mode=='visible' or (mode=='auto' and (platform or os.name)=='nt')
+
+
+def system_browser(platform=None):
+ configured=os.getenv('PRICE_BROWSER_EXECUTABLE','').strip()
+ if configured:return configured
+ if (platform or os.name)=='nt':
+  candidates=[Path(os.getenv('ProgramFiles','C:/Program Files'))/'Google/Chrome/Application/chrome.exe',
+   Path(os.getenv('LOCALAPPDATA','C:/Users/Default/AppData/Local'))/'Google/Chrome/Application/chrome.exe',
+   Path(os.getenv('ProgramFiles(x86)','C:/Program Files (x86)'))/'Google/Chrome/Application/chrome.exe',
+   Path(os.getenv('ProgramFiles(x86)','C:/Program Files (x86)'))/'Microsoft/Edge/Application/msedge.exe',
+   Path(os.getenv('ProgramFiles','C:/Program Files'))/'Microsoft/Edge/Application/msedge.exe']
+  return next((str(path) for path in candidates if path.is_file()),None)
+ return None
+
+
 def offers(source,term,fetch,ean=None,wanted=None,ref=None):
  try:return _offers(source,term,fetch,ean,wanted,ref)
  except (URLError,TimeoutError,ValueError) as exc:
   logging.getLogger(__name__).warning('Raia: acesso direto indisponivel (%s); tentando navegador publico.',type(exc).__name__)
-  with Browser(host=source['host'],validator=browser_url) as browser:
+  with standard_browser(source['host']) as browser:
    result=_offers(source,term,lambda source,path:browser.get('https://'+source['host']+path),ean,wanted,ref)
   for row in result:
    offer=row.get('oferta',row);offer['metodo']='navegador_publico'
   return result
+
+
+class RaiaBrowser(Browser):
+ def __init__(self,host):super().__init__(host=host,validator=browser_url,render=True,visible=browser_mode())
+ def __enter__(self):
+  self.preferred_executable=system_browser()
+  return super().__enter__()
+
+
+def standard_browser(host):return RaiaBrowser(host)
