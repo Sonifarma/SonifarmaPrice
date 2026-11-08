@@ -53,6 +53,11 @@ class TodoDiaTests(unittest.TestCase):
     self.assertEqual(result['preco'],11.99);self.assertEqual(result['coletado_em'],stored)
     browser.return_value.__enter__.return_value.get.assert_not_called()
    with patch.object(todo,'Browser') as browser:
+    changed=product();changed['Items'][0]['RetailPrice']=8
+    browser.return_value.__enter__.return_value.get.return_value=html(changed)
+    self.assertEqual(todo.lookup(path,ean=EAN,force=True)[0]['preco'],8)
+    self.assertEqual(browser.return_value.__enter__.return_value.get.call_count,1)
+   with patch.object(todo,'Browser') as browser:
     self.assertEqual(todo.lookup(path,profile('G SIMETICONA 40MG 20CP MEDL'),ean='0000000000000'),[])
  def test_ranking_keeps_distinct_strengths_from_winning_over_exact_description(self):
   rows=[dict(url=URL,titulo='Simeticona 40mg 20 comprimidos Medley',slug='simeticona'),dict(url=URL+'1',titulo='Simeticona 125mg 10 capsulas Cimed',slug='simeticona')]

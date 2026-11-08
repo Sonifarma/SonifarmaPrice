@@ -124,3 +124,20 @@ class OnlineApiTests(unittest.TestCase):
   source=next(s for s in result['fontes'] if s['fonte']=='raia')
   self.assertEqual(source['ofertas'][0]['preco'],10);self.assertTrue(source['ofertas'][0]['em_oferta'])
   self.assertEqual(len(source['lojas_no_raio']),1)
+
+ def test_refresh_bypasses_fresh_empty_cache_and_failure_keeps_previous_quote(self):
+  with patch.object(online,'catalog',return_value=[]) as provider:
+   self.assertEqual(self.request().json()['fontes'][0]['ofertas'],[])
+   self.assertEqual(provider.call_count,2)
+  with patch.object(online,'catalog',side_effect=self.provider) as provider:
+   self.assertEqual(self.request().json()['fontes'][0]['ofertas'],[]);provider.assert_not_called()
+   fresh=self.request(atualizar=True).json()
+   self.assertEqual(provider.call_count,2);self.assertEqual(fresh['fontes'][0]['ofertas'][0]['preco'],12.34)
+  with patch.object(online,'catalog',side_effect=TimeoutError()):failed=self.request(atualizar=True).json()
+  self.assertTrue(failed['fontes'][0]['desatualizado']);self.assertEqual(failed['fontes'][0]['coletado_em'],fresh['fontes'][0]['coletado_em'])
+  self.assertEqual(failed['fontes'][0]['ofertas'][0]['preco'],12.34)
+
+ def test_raia_not_queried_is_explained_without_prices_outside_radius(self):
+  with patch.object(online,'catalog',side_effect=self.provider):data=self.request().json()
+  omitted=next(source for source in data['fontes_nao_consultadas'] if source['fonte']=='raia')
+  self.assertIn('raio',omitted['motivo']);self.assertNotIn('raia',[source['fonte'] for source in data['fontes']])

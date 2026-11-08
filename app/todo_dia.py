@@ -194,7 +194,7 @@ def rank_urls(products,wanted,limit=8):
  return [url for score,url in sorted(ranked,key=lambda row:(-row[0],row[1]))[:limit]]
 
 
-def lookup(path,wanted=None,ean=None,ref=None):
+def lookup(path,wanted=None,ean=None,ref=None,force=False):
  products=load_index(path)
  with database(path) as con:rows=con.execute('SELECT * FROM tododia_paginas').fetchall()
  cached={r['url']:r for r in rows}
@@ -207,13 +207,13 @@ def lookup(path,wanted=None,ean=None,ref=None):
   browser=None
   for url in urls:
    row=cached.get(url)
-   if row and row['coletado_em']>=cutoff:found=json.loads(row['ofertas'])
+   if not force and row and row['coletado_em']>=cutoff:found=json.loads(row['ofertas'])
    else:
     if browser is None:browser=stack.enter_context(Browser())
     found=parse_product(browser.get(url),url,strict=True)
     collected=now()
     with database(path) as con:con.execute('INSERT INTO tododia_paginas VALUES(?,?,?) ON CONFLICT(url) DO UPDATE SET coletado_em=excluded.coletado_em,ofertas=excluded.ofertas',(url,collected,json.dumps(found,ensure_ascii=False)))
-   timestamp=row['coletado_em'] if row and row['coletado_em']>=cutoff else collected
+   timestamp=row['coletado_em'] if not force and row and row['coletado_em']>=cutoff else collected
    offers.extend(dict(offer,coletado_em=timestamp) for offer in found)
    if ean and any(o['ean']==ean for o in found):break
  if ref:offers=[o for o in offers if o.get('composicao')==ref]
@@ -221,9 +221,9 @@ def lookup(path,wanted=None,ean=None,ref=None):
  return offers
 
 
-def description(path,wanted):
+def description(path,wanted,force=False):
  candidates=[]
- for offer in lookup(path,wanted):
+ for offer in lookup(path,wanted,force=force):
   match=compare(wanted,offer['produto'],offer['laboratorio'])
   if match:candidates.append(dict(ean=offer['ean'],produto=offer['produto'],marca=offer['laboratorio'],url=offer['url'],oferta=offer,**match))
  return candidates[:8]

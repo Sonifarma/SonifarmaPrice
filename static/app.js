@@ -245,6 +245,13 @@
     items.forEach(item=>{const row=document.createElement('tr');[groups[item.grupo]||item.grupo,item.estabelecimento,number(item.distancia_km)+' km',money(item.preco),dateBR(item.coletado_em),item.condicao,item.fonte].forEach((text,index)=>cell(row,text,index===5?'condition-info':''));body.append(row);});
     renderPriceChart(items,chart,'Nenhum preço disponível neste filtro.');
   }
+  function onlineCondition(offer) {
+    if(offer.condicao_comparacao)return offer.condicao_comparacao;
+    const text=offer.condicao||'Sem condição informada';
+    if(text.startsWith('Oferta para pagamento no Pix'))return 'Pagamento no Pix';
+    if(['Preco publico no site;','Preco do catalogo;','Preco basico do catalogo;'].some(prefix=>text.startsWith(prefix)))return 'Preço público por unidade';
+    return text;
+  }
   function renderPriceChart(items,chart,emptyText) {
     chart.replaceChildren();items=items.filter(item=>present(item.preco)&&Number(item.preco)>0);
     if(!items.length){chart.textContent=emptyText;return;}
@@ -272,7 +279,7 @@
     const states=document.createElement('p');states.className='muted';states.textContent=data.fontes.map(s=>s.rede+': '+s.estado+(s.coletado_em?' · '+new Date(s.coletado_em).toLocaleString('pt-BR'):'')).join('; ');panel.append(states);
     const offers=(data.ofertas||[]).filter(o=>Number.isFinite(Number(o.preco))&&Number(o.preco)>0);
     if(!offers.length){const empty=document.createElement('p');empty.textContent='Nenhum preço com composição e apresentação completas nas fontes consultadas.';panel.append(empty);chart.append(panel);return;}
-    const groupsFound=new Map();offers.forEach(o=>{const key=JSON.stringify([o.grupo||'Grupo pendente',o.condicao+(o.desatualizado?' · Coleta anterior':'')]);if(!groupsFound.has(key))groupsFound.set(key,[]);groupsFound.get(key).push(o);});
+    const groupsFound=new Map();offers.forEach(o=>{const key=JSON.stringify([o.grupo||'Grupo pendente',onlineCondition(o)+(o.desatualizado?' · Coleta anterior':'')]);if(!groupsFound.has(key))groupsFound.set(key,[]);groupsFound.get(key).push(o);});
     const maximum=Math.max(...offers.map(o=>Number(o.preco)));
     [...groupsFound].slice(0,12).forEach(([key,items])=>{
       items.sort((a,b)=>Number(a.preco)-Number(b.preco));const [group,condition]=JSON.parse(key);
@@ -347,12 +354,13 @@
           });$(prefix+'-sources').append(box);
         }
         source.ofertas.forEach(offer=>{
-          count++;chartItems.push({grupo:source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:offer.condicao+(source.desatualizado?' · Coleta anterior':'')});const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean+(offer.correspondencia==='descricao_confirmada'?' · Escolhido por descrição nesta consulta':''));cell(row,(offer.em_oferta&&present(offer.preco_regular)?'De '+money(offer.preco_regular)+' por ':'')+money(offer.preco));cell(row,offer.condicao+' Preço da filial não confirmado.','condition-info');
+          count++;chartItems.push({grupo:source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:onlineCondition(offer)+(source.desatualizado?' · Coleta anterior':'')});const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean+(offer.correspondencia==='descricao_confirmada'?' · Escolhido por descrição nesta consulta':''));cell(row,(offer.em_oferta&&present(offer.preco_regular)?'De '+money(offer.preco_regular)+' por ':'')+money(offer.preco));cell(row,offer.condicao+' Preço da filial não confirmado.','condition-info');
           cell(row,(source.coletado_em?new Date(source.coletado_em).toLocaleString('pt-BR'):'Não informada')+(source.desatualizado?' · COLETA ANTERIOR — fonte indisponível':source.cache?' · cache':''));
           cell(row,source.lojas_no_raio.map(store=>store.nome+' — '+store.endereco+' ('+number(store.distancia_km)+' km)').join('; '));
           const target=cell(row,'');const link=document.createElement('a');link.href=offer.url;link.textContent='Conferir oferta no site';link.target='_blank';link.rel='noopener noreferrer';target.append(link);$(prefix+'-rows').append(row);
         });
       });
+      (data.fontes_nao_consultadas||[]).forEach(source=>{const note=document.createElement('p');note.dataset.helpLabel=source.rede+' — não consultada';note.dataset.helpKind='warning';note.textContent=source.motivo;$(prefix+'-sources').append(note);});
       if(data.links_pesquisa?.length){const links=document.createElement('p');links.dataset.helpLabel='Outros sites';links.textContent='Pesquisa manual pela descrição em outros sites (presença no raio não verificada): ';data.links_pesquisa.forEach(source=>{const link=document.createElement('a');link.href=source.url;link.textContent=source.nome;link.target='_blank';link.rel='noopener noreferrer';links.append(link,' · ');});$(prefix+'-sources').append(links);}
       if(!count)empty($(prefix+'-rows'),'Nenhuma oferta retornada pelas fontes consultadas. Confira o estado de cada fonte acima.',7);
       if(data.sem_integracao.length){const note=document.createElement('p');note.dataset.helpLabel='Redes sem integração';note.dataset.helpKind='warning';note.textContent='Lojas ainda sem integração de preços: '+data.sem_integracao.join(', ')+'.';$(prefix+'-sources').append(note);}
@@ -364,7 +372,7 @@
     onlineController?.abort();onlineRequest++;onlineScope=null;$('online-search').disabled=false;$('online-refresh').disabled=false;$('online-sources').replaceChildren();$('online-chart').replaceChildren();
     empty($('online-rows'),'Selecione um produto para carregar os preços online.',7);message('online-message','A consulta online inicia ao selecionar o produto. Você também pode clicar em Atualizar preços online.');
   }
-  async function loadOnline() {
+  async function loadOnline(force=false) {
     const query=$('eanmerc').value.trim(),savedEAN=String(marketSelection?.ean||''),ean=/^[0-9]{8,14}$/.test(savedEAN)?savedEAN:(/^[0-9]{8,14}$/.test(query)?query:null),descricao=(marketSelection?.descricao||(!ean?query:'')).trim().slice(0,180);
     if(!ean&&descricao.length<3){message('online-message','Informe o EAN ou ao menos três caracteres da descrição.',true);return;}
     if(!savedCenter){message('online-message','Cadastre o centro para selecionar as redes dentro do raio.',true);tab('local');return;}
@@ -375,14 +383,14 @@
     clearOnline();onlineScope=scope;onlineController=new AbortController();const token=++onlineRequest;$('online-search').disabled=true;$('online-refresh').disabled=true;closeSuggestions();
     message('online-message','Consultando catálogos por EAN e descrição normalizada; aguarde as fontes.');
     try {
-      const data=await fetchOnline({ean,descricao,raio:radius,centro_versao:savedCenter.versao});
+      const data=await fetchOnline({ean,descricao,raio:radius,centro_versao:savedCenter.versao,atualizar:force===true});
       if(token!==onlineRequest)return;
       renderOnline(data,'online');
     }catch(error){if(error.name!=='AbortError'&&token===onlineRequest){empty($('online-rows'),'Consulta online não concluída. Use Atualizar preços online para tentar novamente.',7);message('online-message',error.message,true);}}
     finally{if(token===onlineRequest){$('online-search').disabled=false;$('online-refresh').disabled=false;}}
   }
-  $('online-search').addEventListener('click',loadOnline);
-  $('online-refresh').addEventListener('click',loadOnline);
+  $('online-search').addEventListener('click',()=>loadOnline(true));
+  $('online-refresh').addEventListener('click',()=>loadOnline(true));
   function marketScope(ean) {
     if(!savedCenter)throw Error('Cadastre o centro da pesquisa para comparar por grupo e raio.');
     const radius=Number($('raiomerc').value),days=Number($('market-days').value);
@@ -417,7 +425,7 @@
       message('detail-market-message',`Centro: ${savedCenter.endereco} · Raio: ${params.get('raio')} km. `+comparison.aviso);
     }catch(error){if(error.name!=='AbortError'&&token===detailId)message(activeProduct?'detail-market-message':'detail-message',error.message,true);}
   }
-  async function loadDetailOnline() {
+  async function loadDetailOnline(force=false) {
     const token=++detailOnlineRequest,product=activeProduct;
     if(!product)return;
     if(!savedCenter){empty($('detail-online-rows'),'Cadastre o centro da pesquisa para consultar os sites.',7);message('detail-online-message','Cadastre e confirme o endereço do centro na tela principal.',true);return;}
@@ -425,13 +433,13 @@
     if(!Number.isFinite(radius)||radius<.5||radius>50){message('detail-online-message','Informe um raio entre 0,5 e 50 km na pesquisa de mercado.',true);return;}
     $('detail-online-refresh').disabled=true;message('detail-online-message','Consultando preços online por EAN e descrição do produto…');
     try {
-      const data=await fetchOnline({ean:/^[0-9]{8,14}$/.test(String(product.ean||''))?String(product.ean):null,descricao:product.descricao,raio:radius,centro_versao:savedCenter.versao});
+      const data=await fetchOnline({ean:/^[0-9]{8,14}$/.test(String(product.ean||''))?String(product.ean):null,descricao:product.descricao,raio:radius,centro_versao:savedCenter.versao,atualizar:force===true});
       if(token!==detailOnlineRequest||!$('product-dialog').open)return;
       renderOnline(data,'detail-online');
     }catch(error){if(token===detailOnlineRequest){$('detail-online-chart').replaceChildren();$('detail-online-sources').replaceChildren();empty($('detail-online-rows'),'Consulta online não concluída.',7);message('detail-online-message',error.message,true);}}
     finally{if(token===detailOnlineRequest)$('detail-online-refresh').disabled=false;}
   }
-  $('detail-online-refresh').addEventListener('click',loadDetailOnline);
+  $('detail-online-refresh').addEventListener('click',()=>loadDetailOnline(true));
   function clearStores(text='Carregue os concorrentes cadastrados ou busque novas lojas no raio.') {
     storesController?.abort();storesId++;storesOffset=0;empty($('stores-rows'),text,6);$('stores-search').disabled=false;message('stores-message',text);
     $('stores-previous').disabled=true;$('stores-next').disabled=true;$('stores-page').textContent='';
