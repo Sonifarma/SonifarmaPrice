@@ -106,6 +106,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   await page.locator('#online-message').filter({hasText:'1 oferta(s) de site'}).waitFor();
   assert.equal(await page.locator('#online-rows tr').count(),1);
   assert.match(await page.locator('#online-rows').innerText(),/12,34/);
+  assert.match(await page.locator('#online-rows').innerText(),/De R\$\s*20,00 por R\$\s*12,34/);
   assert.match(await page.locator('#online-rows').innerText(),/Preço da filial não confirmado/);
   assert.equal(await page.locator('#online-rows a[href="https://www.drogal.com.br/produto-ficticio/p"]').count(),1);
   // A ficha consulta online mesmo quando a fonte de observacoes importadas falha.

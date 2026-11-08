@@ -169,8 +169,12 @@ def parse_product(raw,url,strict=False):
   if isinstance(price,bool) or not isinstance(price,(int,float)) or not math.isfinite(price) or not 0<price<100000:continue
   if isinstance(stock,bool) or not isinstance(stock,(int,float)) or not math.isfinite(stock) or stock<=0:continue
   if round(price,2)<=0:continue
+  promotional=row.get('PromotionPrice')
+  if not isinstance(promotional,bool) and isinstance(promotional,(int,float)) and math.isfinite(promotional) and 0<round(promotional,2)<price:price=round(promotional,2)
+  regular=row.get('ListPrice')
+  regular=round(regular,2) if not isinstance(regular,bool) and isinstance(regular,(int,float)) and math.isfinite(regular) and 0<regular<100000 else None
   seen.add(ean)
-  offers.append({'ean':ean,'produto':title,'preco':round(price,2),'moeda':'BRL','url':url,'vendedor':'Drogaria Todo Dia',
+  offers.append({'ean':ean,'produto':title,'preco':round(price,2),'preco_regular':regular,'em_oferta':bool(regular and price<regular),'moeda':'BRL','url':url,'vendedor':'Drogaria Todo Dia',
    'laboratorio':brand,'composicao':composition.signature(title),'abrangencia':'site_da_rede','filial_confirmada':False,
    'condicao':'Preco publico no site; CEP, frete, PBM, descontos por quantidade e disponibilidade a confirmar.','metodo':'navegador_publico'})
  return offers
