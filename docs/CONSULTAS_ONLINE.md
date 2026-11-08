@@ -1,4 +1,4 @@
-# Consultas online de preços — V1.5.1
+# Consultas online de preços — V1.6.0
 
 Na Pesquisa de mercado, selecione o produto pela descrição ou informe seu EAN completo. Confira o centro e o raio; as lojas precisam estar no cadastro de concorrentes. Clique em **Consultar sites online**. Os resultados aparecem no painel Preços online dos sites das redes.
 
@@ -6,6 +6,7 @@ Na Pesquisa de mercado, selecione o produto pela descrição ou informe seu EAN 
 
 - Drogal: catálogo público em `https://www.drogal.com.br/api/catalog_system/pub/products/search`, filtro exato `alternateIds_Ean`.
 - Drogaria São Paulo: catálogo público em `https://www.drogariasaopaulo.com.br/api/catalog_system/pub/products/search`, mesmo filtro.
+- Droga Raia: busca e páginas públicas renderizadas; ver [Raia e ofertas](RAIA_E_OFERTAS.md).
 - Drogaria Todo Dia: páginas públicas por Chromium e índice do sitemap; ver [preparo do catálogo](TODO_DIA_NAVEGADOR.md).
 
 A consulta considera somente redes integradas com lojas cadastradas no raio atual. A associação da rede usa o nome cadastrado exato ou a raiz do CNPJ; não confirma identidade da filial nem suas condições comerciais. Lojas ainda sem coletor aparecem explicitamente como sem integração. O CNPJ não é obrigatório para pesquisar o catálogo de uma rede identificada pelo nome no cadastro.
@@ -44,3 +45,8 @@ O gráfico usa menor preço em verde, **média aritmética** em amarelo e maior 
 ## Busca por descrição — V1.3.0
 
 A busca por EAN agora pode ser complementada pela descrição normalizada, com expansão de abreviações, candidatos separados e escolha da apresentação. Veja [Busca por descrição](BUSCA_POR_DESCRICAO.md). O uso de um EAN de candidato diferente fica explícito e não altera o cadastro do ERP.
+
+
+## Ofertas — V1.6.0
+
+A consulta prioriza o preço de venda/oferta e apresenta De/por quando o preço regular é maior. Ofertas de Pix são identificadas por condição; quantidade e benefícios pessoais não são presumidos. Veja [regras de preço](RAIA_E_OFERTAS.md).

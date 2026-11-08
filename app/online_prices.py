@@ -17,16 +17,17 @@ from pydantic import BaseModel,Field
 from app.competitors import within_radius,normalized
 from app.search_center import get_center,mutation
 from app.product_search import profile,compare
-from app import composition,todo_dia
+from app import composition,todo_dia,raia
 
 SOURCES={
  'drogal':{'nome':'Drogal','host':'www.drogal.com.br','nomes':{'DROGAL'},'cnpj_raiz':'54375647','vendedores':{'DROGAL'}},
  'dsp':{'nome':'Drogaria São Paulo','host':'www.drogariasaopaulo.com.br','nomes':{'DROGARIA SAO PAULO'},'cnpj_raiz':'61412110','vendedores':{'DROGARIA SAO PAULO'}},
+ 'raia':{'nome':'Droga Raia','host':'www.drogaraia.com.br','nomes':{'DROGA RAIA','RAIA'},'cnpj_raiz':'60746948','cnpj_compartilhado':True,'adaptador':'raia'},
  'tododia':{'nome':'Drogaria Todo Dia','host':'www.drogariatododia.com','nomes':{'DROGARIA TODO DIA','DROGA TODO DIA','DROGARIA TODODIA'},'cnpj_raiz':'12834185','adaptador':'navegador'},
 }
 
 
-AGENT='SonifarmaPrice/1.5.1 (+https://github.com/Sonifarma/SonifarmaPrice)'
+AGENT='SonifarmaPrice/1.6.0 (+https://github.com/Sonifarma/SonifarmaPrice)'
 log=logging.getLogger(__name__)
 locks={key:threading.Lock() for key in SOURCES}
 last_request={}
@@ -72,11 +73,12 @@ def fetch_bytes(host,path,limit):
 
 
 def catalog(source,ean):
+ if source.get('adaptador')=='raia':return raia.offers(source,ean,public_document,ean=ean)
  path='/api/catalog_system/pub/products/search?'+urlencode({'fq':'alternateIds_Ean:'+ean})
  return parse_offers(catalog_data(source,path),source,ean)
 
 
-def catalog_data(source,path):
+def public_document(source,path):
  host=source['host']
  cached=robots_cache.get(host)
  if not cached or time.monotonic()-cached[0]>86400:
@@ -89,8 +91,11 @@ def catalog_data(source,path):
  if crawl>1:
   delay=crawl-(time.monotonic()-last_request.get(host,float('-inf')))
   if delay>0:raise ValueError('Intervalo solicitado pela fonte; tente mais tarde.')
- raw=fetch_bytes(host,path,2_000_000)
- data=json.loads(raw)
+ return fetch_bytes(host,path,2_000_000)
+
+
+def catalog_data(source,path):
+ data=json.loads(public_document(source,path))
  if not isinstance(data,list) or len(data)>50:raise ValueError('Formato inesperado do catalogo.')
  return data
 
@@ -115,9 +120,10 @@ def parse_offers(products,source,ean):
     key=(url,str(item.get('itemId','')),ean)
     if key in seen:continue
     seen.add(key)
+    regular=raia.money(offer.get('ListPrice'))
     conditional=any(offer.get(k) for k in ['Teasers','PromotionTeasers','BuyTogether','DiscountHighLight'])
     result.append({'ean':ean,'produto':str(product.get('productName') or item.get('name') or '')[:300],
-      'preco':round(price,2),'moeda':'BRL','url':url,'vendedor':str(seller.get('sellerName'))[:100],
+      'preco':round(price,2),'preco_regular':regular,'em_oferta':bool(regular and price<regular),'moeda':'BRL','url':url,'vendedor':str(seller.get('sellerName'))[:100],
       'condicao':'Preco basico do catalogo; ha promocoes condicionadas a conferir no site.' if conditional else 'Preco do catalogo; condicoes, CEP, frete e disponibilidade a confirmar no site.',
       'abrangencia':'site_da_rede','filial_confirmada':False,
       'laboratorio':str(product.get('brand') or '')[:100],
@@ -147,6 +153,7 @@ def query_source(path,key,ean,descricao=""):
 
 def description_catalog(source,wanted):
  if not wanted['consulta']:return []
+ if source.get('adaptador')=='raia':return raia.offers(source,wanted['consulta'],public_document,wanted=wanted)
  path='/api/catalog_system/pub/products/search/'+quote(wanted['consulta'],safe='')
  products=catalog_data(source,path);candidates=[];seen=set()
  for product in products:
@@ -192,6 +199,7 @@ def query_description(path,key,wanted):
 
 
 def composition_catalog(source,ref):
+ if source.get('adaptador')=='raia':return raia.offers(source,composition.query_text(ref),public_document,ref=ref)
  products=catalog_data(source,'/api/catalog_system/pub/products/search/'+quote(composition.query_text(ref),safe=''))
  offers=[];seen=set()
  for product in products:
@@ -250,13 +258,15 @@ def composition_results(path,description,ean,sources):
 class OnlineSearch(BaseModel):
  ean:str|None=Field(default=None,pattern=r'^[0-9]{8,14}$')
  descricao:str=Field(default='',max_length=180)
- selecoes:dict[str,str]=Field(default_factory=dict,max_length=3)
+ selecoes:dict[str,str]=Field(default_factory=dict,max_length=4)
  raio:float=Field(2,ge=.5,le=50)
  centro_versao:int=Field(ge=1)
 
 
 def matches(store,source):
- return normalized(store['nome']) in source['nomes'] or bool(store.get('cnpj') and store['cnpj'].startswith(source['cnpj_raiz']))
+ name=normalized(store['nome'])
+ named=name in source['nomes'] or (source.get('adaptador')=='raia' and name.startswith('DROGA RAIA '))
+ return named or bool(not source.get('cnpj_compartilhado') and store.get('cnpj') and store['cnpj'].startswith(source['cnpj_raiz']))
 
 
 
@@ -299,6 +309,6 @@ def make_router(path,distance):
     if found.get('desatualizado'):result['aviso_descricao']='Busca por descricao com coleta anterior; confira a data.'
    result.update(fonte=key,rede=source['nome'],grupo=group_for_stores(related),lojas_no_raio=[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related])
    results.append(result)
-  return {'composicao':composition_results(path(),body.descricao,body.ean,results),'ean':body.ean,'centro':center,'raio_km':body.raio,'descricao_original':body.descricao.strip(),'busca_normalizada':wanted['descricao'] if wanted else None,'links_pesquisa':[{'nome':name,'url':'https://www.google.com/search?'+urlencode({'q':'site:'+host+' '+wanted['descricao']})} for name,host in [('Drogasil','www.drogasil.com.br'),('Droga Raia','www.drogaraia.com.br')]] if wanted else [],'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
+  return {'composicao':composition_results(path(),body.descricao,body.ean,results),'ean':body.ean,'centro':center,'raio_km':body.raio,'descricao_original':body.descricao.strip(),'busca_normalizada':wanted['descricao'] if wanted else None,'links_pesquisa':[{'nome':name,'url':'https://www.google.com/search?'+urlencode({'q':'site:'+host+' '+wanted['descricao']})} for name,host in [('Drogasil','www.drogasil.com.br')]] if wanted else [],'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
     'aviso':'Precos dos sites das redes com lojas cadastradas no raio. O valor e a disponibilidade na filial fisica nao foram confirmados. Nao inclui frete ou beneficios pessoais; confira as condicoes na fonte. Estes valores nao sao incorporados ao grafico de observacoes locais.'}
  return router

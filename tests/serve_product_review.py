@@ -41,7 +41,7 @@ def run():
         'consultado_em':competitors.now(),'fonte':'Fonte ficticia de teste'}
     online_prices.SOURCES['drogal']['nomes'].add('FARMACIA FICTICIA')
     online_prices.catalog = lambda source,ean: [{'ean':ean,'produto':'Produto online ficticio',
-        'preco':12.34,'moeda':'BRL','url':'https://www.drogal.com.br/produto-ficticio/p',
+        'preco':12.34,'preco_regular':20,'em_oferta':True,'moeda':'BRL','url':'https://www.drogal.com.br/produto-ficticio/p',
         'vendedor':'Drogal','condicao':'Preco de teste do catalogo, filial nao confirmada',
         'abrangencia':'site_da_rede','filial_confirmada':False}]
     def description_fixture(source,wanted):

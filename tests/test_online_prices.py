@@ -112,3 +112,15 @@ class OnlineApiTests(unittest.TestCase):
   competitors.set_group(self.path,'node/2','farmacias_independentes')
   with patch.object(online,'catalog',side_effect=AssertionError('cache')):data=self.request().json()
   self.assertIsNone(data['fontes'][0]['grupo'])
+
+ def test_raia_offer_is_automatic_only_when_store_is_in_radius(self):
+  from app import raia
+  from test_raia import data,URL
+  competitors.register(self.path,[{'fonte_id':'node/22','nome':'Droga Raia','latitude':.001,'longitude':0,'endereco':'Rua ficticia'}],competitors.now())
+  def provider(source,ean):
+   if source.get('adaptador')=='raia':return [raia.product_offer(data(),URL,ean)]
+   return self.provider(source,ean)
+  with patch.object(online,'catalog',side_effect=provider),patch.object(online,'query_composition',return_value={'ofertas':[],'estado':'consultado','coletado_em':None,'desatualizado':False}):result=self.request().json()
+  source=next(s for s in result['fontes'] if s['fonte']=='raia')
+  self.assertEqual(source['ofertas'][0]['preco'],10);self.assertTrue(source['ofertas'][0]['em_oferta'])
+  self.assertEqual(len(source['lojas_no_raio']),1)
