@@ -3,10 +3,13 @@ const {chromium}=require('playwright');
 (async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});try{
 const page=await browser.newPage({viewport:{width:1400,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.goto('http://127.0.0.1:18770');await page.locator('[data-tab=concorrentes]').click();
-await page.locator('.manual-competitor>summary').click();
+assert.equal(await page.locator('#competitor-add-form').isVisible(),true);
+assert.equal(await page.locator('#competitor-add-cnpj').getAttribute('required'),null);
+await page.locator('#competitor-add-cnpj').fill('03.340.744/0001-43');
 await page.route('**/api/concorrentes/cnpj/buscar',r=>r.fulfill({json:{nome:'Droga Ge teste',endereco:'Rua de teste 504 Americana'}}));
 await page.locator('#competitor-add-lookup').click();await page.locator('#competitor-add-message').filter({hasText:'Dados consultados'}).waitFor({state:'attached'});
 assert.equal(await page.locator('#competitor-add-name').inputValue(),'Droga Ge teste');
+await page.locator('#competitor-add-cnpj').fill('');
 await page.locator('#competitor-add-group').selectOption('farmacias_independentes');
 await page.locator('#competitor-add-form button[type=submit]').click();
 await page.locator('#competitor-add-points button').first().waitFor();
@@ -15,7 +18,7 @@ await page.locator('#competitor-add-address').fill('Rua de teste 504 Americana')
 await page.locator('#competitor-add-form button[type=submit]').click();await page.locator('#competitor-add-points button').first().click();
 await page.locator('#competitor-add-message').filter({hasText:'Concorrente cadastrado'}).waitFor({state:'attached'});
 const row=page.locator('#competitors-rows tr').filter({hasText:'Droga Ge teste'});assert.equal(await row.count(),1);
-assert.match(await row.innerText(),/Cadastro por CNPJ/);assert.equal(await row.getByRole('link',{name:'Cadastro OSM',exact:true}).count(),0);
+assert.match(await row.innerText(),/Sem CNPJ/);assert.equal(await row.getByRole('link',{name:'Cadastro OSM',exact:true}).count(),0);
 await row.getByRole('combobox').selectOption('farmacias_redes');await row.getByRole('button',{name:'Confirmar grupo'}).click();
 await page.locator('#competitors-message').filter({hasText:'Grupo confirmado'}).waitFor({state:'attached'});
 await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));

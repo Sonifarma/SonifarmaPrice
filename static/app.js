@@ -512,7 +512,7 @@
       const row=document.createElement('tr');cell(row,store.nome);cell(row,'').append(groupLabel(row,store));cell(row,number(store.distancia_km)+' km');
       const site=cell(row,'');
       if(store.site){const link=document.createElement('a');link.href=store.site;link.textContent=new URL(store.site).hostname;link.target='_blank';link.rel='noopener noreferrer';site.append(link);}else site.textContent='Site não informado';
-      const source=cell(row,'');const link=document.createElement('a');if(store.fonte_url){link.href=store.fonte_url;link.textContent=store.fonte_id.startsWith('manual/')?'Cadastro por CNPJ':'Cadastro OSM';link.target='_blank';link.rel='noopener noreferrer';source.append(link);}
+      const source=cell(row,'');const link=document.createElement('a');if(store.fonte_url){link.href=store.fonte_url;link.textContent=store.fonte_id.startsWith('manual/')?'CNPJ informado':'Cadastro OSM';link.target='_blank';link.rel='noopener noreferrer';source.append(link);}else source.textContent='Cadastro manual';
       groupControls(cell(row,''),store,'stores-message');$('stores-rows').append(row);
     });
   }
@@ -571,7 +571,8 @@
         const distance=document.createElement('span');distance.className='badge';distance.textContent=number(store.distancia_km)+' km';location.append(name,address,distance);
         const group=cell(row,'','directory-group');group.dataset.label='Grupo';group.append(groupLabel(row,store));groupControls(group,store,'competitors-message',true);
         const links=cell(row,'','directory-sites');links.dataset.label='Sites e fontes';const sites=document.createElement('div');sites.className='directory-site-links';
-        for(const [url,label] of [[store.site,'Site da loja'],[store.fonte_url,store.fonte_id.startsWith('manual/')?'Cadastro por CNPJ':'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';sites.append(a);}
+        for(const [url,label] of [[store.site,'Site da loja'],[store.fonte_url,store.fonte_id.startsWith('manual/')?'CNPJ informado':'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';sites.append(a);}
+        if(store.fonte_id.startsWith('manual/')){const origin=document.createElement('span');origin.textContent='Cadastro manual';sites.prepend(origin);}
         if(!store.site){const missing=document.createElement('span');missing.className='muted';missing.textContent='Site não informado';sites.prepend(missing);}links.append(sites);
         const details=cell(row,'','directory-registration');details.dataset.label='CNPJ / cadastro';
         const info=store.dados_cnpj,failed=store.cnpj_status==='falha_consulta';
@@ -599,7 +600,7 @@
   Object.entries(groups).forEach(([key,label])=>$('competitor-add-group').add(new Option(label,key)));
   $('competitor-add-lookup').addEventListener('click',async()=>{
     const button=$('competitor-add-lookup');button.disabled=true;$('competitor-add-points').replaceChildren();
-    try{const data=await json('/api/concorrentes/cnpj/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({cnpj:$('competitor-add-cnpj').value})});$('competitor-add-name').value=data.nome;$('competitor-add-address').value=data.endereco;message('competitor-add-message','Dados consultados. Confira a filial e localize o endereço.');}
+    try{const data=await json('/api/concorrentes/cnpj/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({cnpj:$('competitor-add-cnpj').value})});$('competitor-add-name').value=data.nome;$('competitor-add-address').value=data.endereco;message('competitor-add-message','Dados consultados. Para adicionar a loja, clique em Localizar para adicionar loja e escolha o ponto.');}
     catch(error){message('competitor-add-message',error.message,true);}finally{button.disabled=false;}
   });
   $('competitor-add-form').addEventListener('input',()=>$('competitor-add-points').replaceChildren());
@@ -610,7 +611,7 @@
     const submit=event.submitter;submit.disabled=true;
     try{const data=await json('/api/mercado/centro/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({endereco:body.endereco})});
       message('competitor-add-message',data.candidatos.length?'Escolha a localização correta da loja para cadastrar.':'Endereço não localizado. Complete ou corrija o endereço e tente novamente.');
-      data.candidatos.forEach(point=>{const box=document.createElement('div');box.className='manual-location';const name=document.createElement('p');name.textContent=point.endereco;const link=document.createElement('a');link.href=point.mapa_url;link.textContent='Conferir ponto no mapa';link.target='_blank';link.rel='noopener noreferrer';const save=document.createElement('button');save.type='button';save.textContent='Cadastrar nesta localização';save.addEventListener('click',async()=>{save.disabled=true;try{const result=await json('/api/concorrentes/manual',{method:'POST',headers:configHeaders(),body:JSON.stringify({...body,candidato_id:point.candidato_id})});$('competitor-add-points').replaceChildren();$('competitors-q').value='';competitorOffset=0;await loadCompetitors();await loadSavedStores();message('competitor-add-message',result.mensagem+' Distância: '+number(result.distancia_km)+' km.');}catch(error){message('competitor-add-message',error.message,true);}finally{save.disabled=false;}});box.append(name,link,save);$('competitor-add-points').append(box);});
+      data.candidatos.forEach(point=>{const box=document.createElement('div');box.className='manual-location';const name=document.createElement('p');name.textContent=point.endereco;const link=document.createElement('a');link.href=point.mapa_url;link.textContent='Conferir ponto no mapa';link.target='_blank';link.rel='noopener noreferrer';const save=document.createElement('button');save.type='button';save.textContent='Adicionar concorrente nesta localização';save.addEventListener('click',async()=>{save.disabled=true;try{const result=await json('/api/concorrentes/manual',{method:'POST',headers:configHeaders(),body:JSON.stringify({...body,candidato_id:point.candidato_id})});$('competitor-add-points').replaceChildren();$('competitors-q').value='';competitorOffset=0;await loadCompetitors();await loadSavedStores();message('competitor-add-message',result.mensagem+' Distância: '+number(result.distancia_km)+' km.');}catch(error){message('competitor-add-message',error.message,true);}finally{save.disabled=false;}});box.append(name,link,save);$('competitor-add-points').append(box);});
     }catch(error){message('competitor-add-message',error.message,true);}finally{submit.disabled=false;}
   });
   $('competitors-form').addEventListener('submit',event=>{event.preventDefault();competitorOffset=0;loadCompetitors();});

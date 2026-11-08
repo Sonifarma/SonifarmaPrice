@@ -32,6 +32,13 @@ class ManualTests(unittest.TestCase):
             self.assertEqual(con.execute('SELECT count(*) FROM concorrentes_auditoria').fetchone()[0],2)
             self.assertEqual(con.execute('SELECT grupo FROM concorrentes_cadastro').fetchone()[0],'farmacias_redes')
 
+    def test_without_cnpj_and_duplicate_name_address(self):
+        response=self.post(cnpj='');self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(self.post(cnpj='').status_code,409)
+        row=c.within_radius(self.path,{'latitude':0,'longitude':0},2,main.km)[0]
+        self.assertIsNone(row['cnpj']);self.assertIsNone(row['fonte_url'])
+        self.assertEqual(row['cnpj_status'],'nao_identificado')
+
     def test_guard_invalid_identity_address_expired_and_radius(self):
         self.assertEqual(self.client.post('/api/concorrentes/manual',json=self.body).status_code,403)
         for change in [dict(cnpj='03.340.744/0001-44'),dict(endereco='Outro endereco'),dict(centro_versao=2),dict(site='javascript:alert(1)'),dict(grupo='invalid')]:
