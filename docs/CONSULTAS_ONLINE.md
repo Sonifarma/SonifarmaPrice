@@ -34,3 +34,10 @@ Quando há uma Todo Dia cadastrada no raio, o painel online apresenta a fonte co
 ## Início automático da consulta — V1.2.2
 
 Selecionar um produto inicia a consulta online quando centro e raio estão válidos. Confirmar ou recarregar o centro retoma a consulta do produto selecionado. O botão de consulta de observações também inicia a busca online para o EAN digitado, e o novo botão Atualizar preços online fica no próprio painel de resultados. Requisições simultâneas para o mesmo EAN, raio e versão do centro não são duplicadas. Alterar o produto cancela a exibição anterior. Uma busca de lojas concluída retoma a consulta do produto para considerar as redes recém-cadastradas. As fontes, condições e cache permanecem os mesmos; não há coleta contínua em segundo plano.
+
+
+## Gráfico na ficha do produto — V1.2.3
+
+Abrir a ficha consulta também os preços online do EAN, além das observações importadas. São fontes independentes: falha ou ausência de CSV não impede consultar os sites. O painel online da ficha e o da pesquisa usam o mesmo renderizador e compartilham requisições simultâneas do mesmo EAN, raio e centro.
+
+O gráfico usa menor preço em verde, **média aritmética** em amarelo e maior preço em vermelho, separado por grupo e condição comercial. A média é soma dos preços dividida pela quantidade de ofertas, não mediana. Não há preenchimento com zero para grupos sem ofertas. Uma oferta da rede não é multiplicada por suas filiais. O grupo vem do cadastro compartilhado dos concorrentes: classificações ausentes ou conflitantes ficam como grupo pendente. Condições diferentes e coletas anteriores são separadas; o preço do site não confirma a oferta na filial. O gráfico de observações importadas também passa a mostrar média aritmética.

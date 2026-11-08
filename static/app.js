@@ -6,7 +6,8 @@
   const number = value => present(value) ? Number(value).toLocaleString('pt-BR', {maximumFractionDigits:2}) : '—';
   const dateBR = value => {const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);return match ? `${match[3]}/${match[2]}/${match[1]}` : 'Não informada';};
   const groups = {supermercados:'Supermercados e atacarejos',perfumarias:'Perfumarias',farmacias_redes:'Farmácias de rede',farmacias_independentes:'Farmácias independentes'};
-  let onlineController,onlineRequest=0,onlineScope=null;
+  let onlineController,onlineRequest=0,onlineScope=null,detailOnlineRequest=0;
+  const onlinePending=new Map();
   let entryAvailable = false, current = [], applied = null, offset = 0, hasMore = false, dirty = false;
   let controller, requestId = 0, marketController, marketRequest = 0, marketItems = [];
   let detailController,detailId=0,activeProduct=null,storesController,storesId=0,storesOffset=0;
@@ -234,17 +235,22 @@
     body.replaceChildren();chart.replaceChildren();
     if(!items.length) {empty(body,'Nenhuma observação neste filtro.',7);chart.textContent='Nenhuma observação importada neste filtro.';return;}
     items.forEach(item=>{const row=document.createElement('tr');[groups[item.grupo]||item.grupo,item.estabelecimento,number(item.distancia_km)+' km',money(item.preco),dateBR(item.coletado_em),item.condicao,item.fonte].forEach(text=>cell(row,text));body.append(row);});
+    renderPriceChart(items,chart,'Nenhum preço disponível neste filtro.');
+  }
+  function renderPriceChart(items,chart,emptyText) {
+    chart.replaceChildren();items=items.filter(item=>present(item.preco)&&Number(item.preco)>0);
+    if(!items.length){chart.textContent=emptyText;return;}
     const summaries=new Map();
     items.forEach(item=>{if(!present(item.preco)||Number(item.preco)<=0)return;const key=JSON.stringify([item.grupo,item.condicao||'Sem condição informada']);if(!summaries.has(key))summaries.set(key,[]);summaries.get(key).push(Number(item.preco));});
     const maximum=items.reduce((max,item)=>present(item.preco)?Math.max(max,Number(item.preco)):max,0);
     [...summaries].slice(0,12).forEach(([key,values])=>{
-      const [group,condition]=JSON.parse(key);values.sort((a,b)=>a-b);const mid=Math.floor(values.length/2),median=values.length%2?values[mid]:(values[mid-1]+values[mid])/2;
+      const [group,condition]=JSON.parse(key);values.sort((a,b)=>a-b);const average=values.reduce((sum,value)=>sum+value,0)/values.length;
       const box=document.createElement('div');box.className='chart-group';const title=document.createElement('h3');title.textContent=groups[group]||group;
       const note=document.createElement('div');note.className='muted';note.textContent=condition+' · '+values.length+' observações';
       const bars=document.createElement('div');bars.className='bars';
-      [['Menor',values[0],''],['Mediana',median,'medium'],['Maior',values.at(-1),'high']].forEach(([label,value,style])=>{
+      [['Menor',values[0],''],['Média',average,'medium'],['Maior',values.at(-1),'high']].forEach(([label,value,style])=>{
         const col=document.createElement('div');col.className='bar-col';const price=document.createElement('span');price.textContent=money(value);
-        const bar=document.createElement('div');bar.className='bar '+style;bar.style.height=(maximum?value/maximum*92:0)+'px';bar.setAttribute('aria-hidden','true');const caption=document.createElement('span');caption.textContent=label;col.append(price,bar,caption);bars.append(col);
+        const bar=document.createElement('div');bar.className='bar '+style;bar.style.height=(maximum?value/maximum*92:0)+'px';col.dataset.price=String(value);col.dataset.summary=label;bar.setAttribute('aria-hidden','true');const caption=document.createElement('span');caption.textContent=label;col.append(price,bar,caption);bars.append(col);
       });box.append(title,note,bars);chart.append(box);
     });
     if(summaries.size>12){const note=document.createElement('p');note.textContent='Gráfico limitado aos primeiros 12 grupos/condições. A tabela mantém todas as observações.';chart.append(note);}
@@ -275,8 +281,31 @@
     catch(error){if(error.name!=='AbortError'&&token===marketRequest){marketItems=[];renderMarket();message('marketmsg',error.message,true);}}
     finally{if(token===marketRequest)$('market-search').disabled=false;}
   });
+  function fetchOnline(body) {
+    const key=JSON.stringify([body.ean,body.raio,body.centro_versao]);
+    if(onlinePending.has(key))return onlinePending.get(key);
+    const pending=json('/api/mercado/online/consultar',{method:'POST',headers:configHeaders(),body:JSON.stringify(body)}).finally(()=>onlinePending.delete(key));
+    onlinePending.set(key,pending);return pending;
+  }
+  function renderOnline(data,prefix) {
+      $(prefix+'-rows').replaceChildren();$(prefix+'-sources').replaceChildren();let count=0;const chartItems=[];
+      data.fontes.forEach(source=>{
+        const note=document.createElement('p');note.textContent=source.rede+' — '+(source.mensagem||(source.ofertas.length?`${source.ofertas.length} oferta(s) ${source.cache?'em cache':'consultada(s)'}.`:'Sem oferta disponível com esse EAN no catálogo.'));$(prefix+'-sources').append(note);
+        if(source.url_consulta){const link=document.createElement('a');link.href=source.url_consulta;link.textContent='Abrir site da '+source.rede+' para consulta manual';link.target='_blank';link.rel='noopener noreferrer';note.append(' ',link);}
+        source.ofertas.forEach(offer=>{
+          count++;chartItems.push({grupo:source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:offer.condicao+(source.desatualizado?' · Coleta anterior':'')});const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean);cell(row,money(offer.preco));cell(row,offer.condicao+' Preço da filial não confirmado.');
+          cell(row,(source.coletado_em?new Date(source.coletado_em).toLocaleString('pt-BR'):'Não informada')+(source.desatualizado?' · COLETA ANTERIOR — fonte indisponível':source.cache?' · cache':''));
+          cell(row,source.lojas_no_raio.map(store=>store.nome+' — '+store.endereco+' ('+number(store.distancia_km)+' km)').join('; '));
+          const target=cell(row,'');const link=document.createElement('a');link.href=offer.url;link.textContent='Conferir oferta no site';link.target='_blank';link.rel='noopener noreferrer';target.append(link);$(prefix+'-rows').append(row);
+        });
+      });
+      if(!count)empty($(prefix+'-rows'),'Nenhuma oferta retornada pelas fontes consultadas. Confira o estado de cada fonte acima.',7);
+      if(data.sem_integracao.length){const note=document.createElement('p');note.textContent='Lojas ainda sem integração de preços: '+data.sem_integracao.join(', ')+'.';$(prefix+'-sources').append(note);}
+      message(prefix+'-message',`${count} oferta(s) de site para EAN ${data.ean}. `+(data.fontes.length?data.aviso:'Nenhuma rede integrada foi identificada no cadastro dentro do raio. Busque ou confira os concorrentes cadastrados.'));
+      renderPriceChart(chartItems,$(prefix+'-chart'),'Nenhum preço online obtido para este EAN. Confira o estado das fontes acima.');
+  }
   function clearOnline() {
-    onlineController?.abort();onlineRequest++;onlineScope=null;$('online-search').disabled=false;$('online-refresh').disabled=false;$('online-sources').replaceChildren();
+    onlineController?.abort();onlineRequest++;onlineScope=null;$('online-search').disabled=false;$('online-refresh').disabled=false;$('online-sources').replaceChildren();$('online-chart').replaceChildren();
     empty($('online-rows'),'Selecione um produto para carregar os preços online.',7);message('online-message','A consulta online inicia ao selecionar o produto. Você também pode clicar em Atualizar preços online.');
   }
   async function loadOnline() {
@@ -290,22 +319,9 @@
     clearOnline();onlineScope=scope;onlineController=new AbortController();const token=++onlineRequest;$('online-search').disabled=true;$('online-refresh').disabled=true;closeSuggestions();
     message('online-message','Consultando catálogos públicos pelo EAN; a consulta pode levar até um minuto.');
     try {
-      const data=await json('/api/mercado/online/consultar',{method:'POST',headers:configHeaders(),body:JSON.stringify({ean,raio:radius,centro_versao:savedCenter.versao}),signal:onlineController.signal});
+      const data=await fetchOnline({ean,raio:radius,centro_versao:savedCenter.versao});
       if(token!==onlineRequest)return;
-      $('online-rows').replaceChildren();$('online-sources').replaceChildren();let count=0;
-      data.fontes.forEach(source=>{
-        const note=document.createElement('p');note.textContent=source.rede+' — '+(source.mensagem||(source.ofertas.length?`${source.ofertas.length} oferta(s) ${source.cache?'em cache':'consultada(s)'}.`:'Sem oferta disponível com esse EAN no catálogo.'));$('online-sources').append(note);
-        if(source.url_consulta){const link=document.createElement('a');link.href=source.url_consulta;link.textContent='Abrir site da '+source.rede+' para consulta manual';link.target='_blank';link.rel='noopener noreferrer';note.append(' ',link);}
-        source.ofertas.forEach(offer=>{
-          count++;const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean);cell(row,money(offer.preco));cell(row,offer.condicao+' Preço da filial não confirmado.');
-          cell(row,(source.coletado_em?new Date(source.coletado_em).toLocaleString('pt-BR'):'Não informada')+(source.desatualizado?' · COLETA ANTERIOR — fonte indisponível':source.cache?' · cache':''));
-          cell(row,source.lojas_no_raio.map(store=>store.nome+' — '+store.endereco+' ('+number(store.distancia_km)+' km)').join('; '));
-          const target=cell(row,'');const link=document.createElement('a');link.href=offer.url;link.textContent='Conferir oferta no site';link.target='_blank';link.rel='noopener noreferrer';target.append(link);$('online-rows').append(row);
-        });
-      });
-      if(!count)empty($('online-rows'),'Nenhuma oferta retornada pelas fontes consultadas. Confira o estado de cada fonte acima.',7);
-      if(data.sem_integracao.length){const note=document.createElement('p');note.textContent='Lojas ainda sem integração de preços: '+data.sem_integracao.join(', ')+'.';$('online-sources').append(note);}
-      message('online-message',`${count} oferta(s) de site para EAN ${data.ean}. `+(data.fontes.length?data.aviso:'Nenhuma rede integrada foi identificada no cadastro dentro do raio. Busque ou confira os concorrentes cadastrados.'));
+      renderOnline(data,'online');
     }catch(error){if(error.name!=='AbortError'&&token===onlineRequest){empty($('online-rows'),'Consulta online não concluída. Use Atualizar preços online para tentar novamente.',7);message('online-message',error.message,true);}}
     finally{if(token===onlineRequest){$('online-search').disabled=false;$('online-refresh').disabled=false;}}
   }
@@ -319,9 +335,10 @@
   }
   $('selected-product').addEventListener('click',()=>{if(marketSelection?.embalagem_id)openProduct(marketSelection);});
   $('detail-close').addEventListener('click',()=>$('product-dialog').close());
-  $('product-dialog').addEventListener('close',()=>{detailController?.abort();detailId++;});
+  $('product-dialog').addEventListener('close',()=>{detailController?.abort();detailId++;detailOnlineRequest++;});
   async function openProduct(item) {
-    detailController?.abort();detailController=new AbortController();const token=++detailId;activeProduct=null;
+    detailController?.abort();detailController=new AbortController();const token=++detailId;activeProduct=null;detailOnlineRequest++;
+    $('detail-online-refresh').disabled=true;$('detail-online-sources').replaceChildren();$('detail-online-chart').replaceChildren();empty($('detail-online-rows'),'Carregando produto para consultar os sites…',7);message('detail-online-message','Carregando produto…');
     $('detail-title').textContent=item.descricao || 'Ficha do produto';$('detail-data').replaceChildren();$('detail-classes').replaceChildren();
     $('detail-remarcacao').textContent='';$('detail-market-message').textContent='';$('detail-stores').disabled=true;
     renderMarketInto([],$('detail-market-rows'),$('detail-chart'));message('detail-message','Consultando ficha do produto…');
@@ -336,13 +353,29 @@
       else $('detail-classes').textContent=data.classificacao_disponivel?'Produto sem classificação cadastrada.':'Classificação não disponível nesta fonte do Alpha7.';
       $('detail-remarcacao').textContent='Grupo de remarcação: '+(data.grupo_remarcacao?.nome||(data.grupo_remarcacao_disponivel?'não cadastrado':'não disponível nesta fonte'));
       message('detail-message',data.classificacoes_limitadas?'Classificações limitadas às primeiras 100.':'Ficha consultada em modo somente leitura.');$('detail-stores').disabled=false;
-      if(!activeProduct.ean){message('detail-market-message','Produto sem EAN; comparação não vinculada automaticamente.');return;}
+      if(!/^[0-9]{8,14}$/.test(String(activeProduct.ean||''))){empty($('detail-online-rows'),'Produto sem EAN válido.',7);message('detail-market-message','Produto sem EAN válido; comparação não vinculada automaticamente.');message('detail-online-message','Produto sem EAN válido. Confira o cadastro do produto.');return;}
+      $('detail-online-refresh').disabled=false;loadDetailOnline();
       const params=marketScope(activeProduct.ean);message('detail-market-message','Consultando observações por grupo…');
       const comparison=await json('/api/mercado/comparar?'+params,{signal:detailController.signal});if(token!==detailId)return;
       renderMarketInto(comparison.observacoes,$('detail-market-rows'),$('detail-chart'));
       message('detail-market-message',`Centro: ${savedCenter.endereco} · Raio: ${params.get('raio')} km. `+comparison.aviso);
     }catch(error){if(error.name!=='AbortError'&&token===detailId)message(activeProduct?'detail-market-message':'detail-message',error.message,true);}
   }
+  async function loadDetailOnline() {
+    const token=++detailOnlineRequest,product=activeProduct;
+    if(!product?.ean)return;
+    if(!savedCenter){empty($('detail-online-rows'),'Cadastre o centro da pesquisa para consultar os sites.',7);message('detail-online-message','Cadastre e confirme o endereço do centro na tela principal.',true);return;}
+    const radius=Number($('raiomerc').value);
+    if(!Number.isFinite(radius)||radius<.5||radius>50){message('detail-online-message','Informe um raio entre 0,5 e 50 km na pesquisa de mercado.',true);return;}
+    $('detail-online-refresh').disabled=true;message('detail-online-message','Consultando preços online por EAN '+product.ean+'…');
+    try {
+      const data=await fetchOnline({ean:product.ean,raio:radius,centro_versao:savedCenter.versao});
+      if(token!==detailOnlineRequest||!$('product-dialog').open)return;
+      renderOnline(data,'detail-online');
+    }catch(error){if(token===detailOnlineRequest){$('detail-online-chart').replaceChildren();$('detail-online-sources').replaceChildren();empty($('detail-online-rows'),'Consulta online não concluída.',7);message('detail-online-message',error.message,true);}}
+    finally{if(token===detailOnlineRequest)$('detail-online-refresh').disabled=false;}
+  }
+  $('detail-online-refresh').addEventListener('click',loadDetailOnline);
   function clearStores(text='Carregue os concorrentes cadastrados ou busque novas lojas no raio.') {
     storesController?.abort();storesId++;storesOffset=0;empty($('stores-rows'),text,6);$('stores-search').disabled=false;message('stores-message',text);
     $('stores-previous').disabled=true;$('stores-next').disabled=true;$('stores-page').textContent='';
@@ -368,6 +401,8 @@
           row.querySelector('select').value=data.grupo;
         });
         message(messageId,'Grupo confirmado no cadastro compartilhado de concorrentes.');
+        if(marketSelection?.ean&&savedCenter)loadOnline();
+        if(activeProduct?.ean&&$('product-dialog').open)loadDetailOnline();
       }catch(error){message(messageId,error.message,true);}finally{save.disabled=false;}
     });
     const controls=document.createElement('div');controls.className='store-review';controls.append(select,reason,save);container.append(controls);
