@@ -14,48 +14,29 @@ Intervalos incluídos: Hoje, Ontem, Até hoje, Semana atual, Semana passada, Mê
 
 A API mantém `periodo=todos` e `data_filtro=entrada` para compatibilidade com consumidores antigos; a tela nova envia `periodo=45`, `data_filtro=compra`, `tipo_preco=liberado` e `status_produto=ativo`. Os filtros de margem/revisão e estoque continuam disponíveis.
 
-## Última compra precisa de fonte confirmada
+## Última compra — fonte fiscal confirmada na V1.4.1
 
-Os CSVs de notas fiscais enviados identificam a fonte `notafiscal.datahoraentrada`, com vínculo `itemnotafiscal.notafiscalid -> notafiscal.id` e `itemnotafiscal.embalagemid -> embalagem.id -> embalagem.produtoid`. A consulta fiscal calcula MAX por produto, em todas as suas embalagens, na unidade configurada. Usa fornecedor identificado, quantidade positiva, sem bonificação e com movimentação do item. Status da nota, movimento físico e CFOPs de compra precisam ser confirmados no Alpha7 antes da ativação. Os códigos I/C/R encontrados na amostra não foram interpretados por suposição.
+O usuário confirmou que `notafiscal.status=C` significa concluída e `tipomovimentacaofisica=A` adiciona estoque. A fonte padrão agora usa `notafiscal.datahoraentrada`, com vínculo `itemnotafiscal.notafiscalid -> notafiscal.id` e `itemnotafiscal.embalagemid -> embalagem.id -> embalagem.produtoid`. Calcula MAX por produto, em todas as suas embalagens, na unidade configurada, com fornecedor identificado, quantidade positiva, sem bonificação e sem item sem movimentação. O histórico de custo não fornece a data de compra.
 
-As amostras de 10 notas e 10 itens não possuem IDs de nota em comum, portanto não comprovam o vínculo de uma compra real nem a semântica dos status. O histórico de custo pode auxiliar na conferência dos vínculos, mas sua data não substitui a entrada da nota. Os CSVs fiscais não são incluídos no repositório. O ambiente de desenvolvimento não conseguiu conexão com o banco de produção para validar seus metadados.
+CFOPs padrão: 1102,2102,3102,1403,2403 e os de venda do emitente que podem ser conservados no XML importado: 5101,5102,5401,5403,6101,6102,6401,6403,7101,7102. A lista contempla compras usuais de mercadoria para revenda e exclui devoluções, transferências e notas que referenciam cupons (5929). Operações especiais fora dessa lista não participam até configurar `A7_PURCHASE_CFOPS` com uma lista separada por vírgulas.
 
-Por isso, a implementação não transforma A7_ENTRY em A7_PURCHASE automaticamente. Sem a fonte confirmada, o filtro de compra é explicitamente bloqueado e a tela oferece **Consultar sem filtro de última compra**, que seleciona Todos os períodos. Isso permite usar os demais filtros e a rolagem enquanto o mapeamento é concluído, sem apresentar uma lista sem filtro como se fossem os últimos 45 dias.
+Instalações sem configuração anterior passam a usar essa fonte automaticamente após atualizar e reiniciar. Não é necessário alterar o `.env`. Fontes planas anteriormente configuradas continuam preservadas. `A7_PURCHASE_CONFIRMED=0` desabilita explicitamente a fonte; se essa opção tiver sido incluída manualmente, mudar para 1 para ativar. As opções abaixo permitem sobrescrever os padrões:
 
-No PowerShell do servidor, após atualizar:
+```dotenv
+A7_PURCHASE_SOURCE=notafiscal
+A7_PURCHASE_CONFIRMED=1
+A7_PURCHASE_SCHEMA=public
+A7_PURCHASE_STATUS_VALUE=C
+A7_PURCHASE_MOVEMENT_VALUE=A
+```
+
+A consulta valida existência e tipos de colunas no servidor antes da leitura. A conexão com o Alpha7 de produção não estava disponível neste ambiente; a validação executada usa SQL em PostgreSQL simulado com os códigos C/A confirmados e fixtures fictícias. Os CSVs fiscais não foram adicionados ao repositório.
+
+Para diagnosticar somente nomes e tipos de colunas, sem valores fiscais nem senhas:
 
 ```powershell
 cd C:\SonifarmaPrice
 .\.venv\Scripts\python.exe -m app.diagnostico_compras
 ```
 
-O arquivo `data\diagnostico_compras_*.json` contém somente nomes e tipos de colunas, sem valores de produtos, dados pessoais ou senhas. Não altera o banco. A estrutura permite identificar uma fonte de compras/recebimentos finalizados, sua unidade e o vínculo com produto ou embalagem. Depois de confirmar a semântica, configurar no `.env` existente:
-
-```dotenv
-A7_PURCHASE_CONFIRMED=1
-A7_PURCHASE_SCHEMA=esquema_confirmado
-A7_PURCHASE_TABLE=tabela_confirmada
-A7_PURCHASE_ID_KIND=produto
-A7_PURCHASE_ID_COLUMN=coluna_confirmada
-A7_PURCHASE_UNIT_COLUMN=coluna_confirmada
-A7_PURCHASE_DATE_COLUMN=coluna_confirmada
-A7_PURCHASE_STATUS_COLUMN=coluna_confirmada
-A7_PURCHASE_STATUS_VALUE=status_finalizado_confirmado
-```
-
-Os nomes acima são marcadores, não um mapeamento real. A consulta valida nomes, tipos de data e existência das colunas, usa MAX para a última compra na unidade configurada e considera somente o status finalizado confirmado. O preenchimento do `.env` de produção depende da estrutura e semântica do Alpha7 no servidor.
-
-## Fonte fiscal preparada a partir dos CSVs
-
-Depois de confirmar os códigos de notas válidas, movimento que adiciona estoque e CFOPs que representam compras, a integração pronta pode ser ativada no `.env`:
-
-```dotenv
-A7_PURCHASE_SOURCE=notafiscal
-A7_PURCHASE_CONFIRMED=1
-A7_PURCHASE_SCHEMA=public
-A7_PURCHASE_STATUS_VALUE=codigo_confirmado
-A7_PURCHASE_MOVEMENT_VALUE=codigo_confirmado
-A7_PURCHASE_CFOPS=lista_confirmada_separada_por_virgulas
-```
-
-Os valores `codigo_confirmado` e `lista_confirmada_separada_por_virgulas` são marcadores e não devem ser copiados literalmente. Não é necessário configurar TABLE/ID_COLUMN/DATE_COLUMN nesta modalidade. O sistema valida as colunas e tipos no servidor antes de executar a consulta. Não usa emissão ou histórico de custo como substitutos. CFOP não é inferido só pelo primeiro dígito: o item importado pode conservar o CFOP de saída do emitente. A lista confirmada deve excluir devoluções, transferências, bonificações e notas que apenas referenciam cupons. Os testes usam códigos de status/movimento fictícios para não transformar uma hipótese sobre o Alpha7 em regra de produção.
+O arquivo fica em `data\diagnostico_compras_*.json`. Quando a fonte estiver desativada, a tela oferece uma ação explícita para consultar sem filtro de compra; não apresenta resultados sem datas como se fossem os últimos 45 dias.
