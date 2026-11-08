@@ -128,6 +128,16 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   await page.locator('#detail-close').click();
   await page.unroute('**/api/mercado/online/consultar',groupedOnline);
   await page.unroute('**/api/mercado/comparar?*',failedImports);
+  await page.locator('#eanmerc').fill('G SIMETICONA 40MG 20CP MEDL');
+  await page.locator('#online-refresh').click();
+  await page.locator('#online-sources .description-candidate').first().waitFor();
+  assert.match(await page.locator('#online-message').innerText(),/MEDLEY/);
+  assert.equal(await page.locator('#online-rows a').count(),0); // candidato ainda nao escolhido
+  await page.locator('#online-sources').getByRole('button',{name:'Usar este produto na consulta'}).click();
+  await page.locator('#online-message').filter({hasText:'1 oferta(s) de site'}).waitFor();
+  assert.match(await page.locator('#online-rows').innerText(),/7896422522823/);
+  assert.match(await page.locator('#online-rows').innerText(),/Escolhido por descrição nesta consulta/);
+  assert.match(await page.locator('#online-rows').innerText(),/17,89/);
   await page.screenshot({path:'work/mercado-crm-desktop.png',fullPage:true});
   await page.locator('#eanmerc').fill('de teste');
   assert.doesNotMatch(await page.locator('#online-rows').innerText(),/Produto online ficticio/);
