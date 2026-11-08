@@ -30,7 +30,8 @@ for name,price,status,cfg,start,end in [
 ]:
  query,params=build_query(SQL,cfg,'timestamp without time zone' if cfg else None,'produto','',start,end,Decimal('30'),False,False,100,0,price,status,'ultima_compra')
  cases[name]={'query':query,'params':params}
-fiscal=dict(SOURCE='notafiscal',SCHEMA='public',STATUS_VALUE='VALIDA_TESTE',MOVEMENT_VALUE='ENTRADA_TESTE',CFOPS=['5102'])
+from app.product_review import purchase_config
+fiscal=purchase_config()
 query,params=build_query(SQL,fiscal,'timestamp without time zone','produto','',date(2026,11,6),date(2026,11,7),Decimal('30'),False,False,100,0,'liberado','ativo','ultima_compra')
 cases['fiscal']={'query':query,'params':params}
 for name,term in [('lookup_middle','uto'),('lookup_ean','4006381333931'),('lookup_literal','%_')]:
@@ -61,13 +62,13 @@ print(json.dumps(cases,default=str))
    CREATE TABLE notafiscal(id int,unidadenegocioid int,fornecedorid int,datahoraentrada timestamp,status text,tipomovimentacaofisica text);
    CREATE TABLE itemnotafiscal(notafiscalid int,embalagemid int,quantidade numeric,bonificacao boolean,itemsemmovimentacao boolean,cfop int);
    INSERT INTO notafiscal VALUES
-    (1,1,100,'2026-11-07 23:59:59','VALIDA_TESTE','ENTRADA_TESTE'),
-    (2,2,100,'2026-11-09','VALIDA_TESTE','ENTRADA_TESTE'),
-    (3,1,100,'2026-11-09','CANCELADA_TESTE','ENTRADA_TESTE'),
-    (4,1,100,'2026-11-09','VALIDA_TESTE','SAIDA_TESTE'),
-    (5,1,100,'2026-11-09','VALIDA_TESTE','ENTRADA_TESTE'),
-    (6,1,NULL,'2026-11-09','VALIDA_TESTE','ENTRADA_TESTE'),
-    (7,1,100,NULL,'VALIDA_TESTE','ENTRADA_TESTE');
+    (1,1,100,'2026-11-07 23:59:59','C','A'),
+    (2,2,100,'2026-11-09','C','A'),
+    (3,1,100,'2026-11-09','CANCELADA_TESTE','A'),
+    (4,1,100,'2026-11-09','C','SAIDA_TESTE'),
+    (5,1,100,'2026-11-09','C','A'),
+    (6,1,NULL,'2026-11-09','C','A'),
+    (7,1,100,NULL,'C','A');
    INSERT INTO itemnotafiscal VALUES
     (1,12,2,false,false,5102), (2,11,2,false,false,5102),
     (3,11,2,false,false,5102), (4,11,2,false,false,5102),

@@ -28,9 +28,13 @@ class PurchaseMappingTests(unittest.TestCase):
   settings.update(A7_PURCHASE_CONFIRMED='1',A7_PURCHASE_STATUS_VALUE='VALIDA_TESTE',A7_PURCHASE_MOVEMENT_VALUE='ENTRADA_TESTE',A7_PURCHASE_CFOPS='5102, 6102')
   with patch.dict(os.environ,settings,clear=True):
    config=review.purchase_config();self.assertEqual(config['CFOPS'],['5102','6102'])
-  for field in ['A7_PURCHASE_STATUS_VALUE','A7_PURCHASE_MOVEMENT_VALUE','A7_PURCHASE_CFOPS']:
-   with patch.dict(os.environ,dict(settings,**{field:''}),clear=True):
-    with self.assertRaises(review.HTTPException):review.purchase_config()
+  with patch.dict(os.environ,{},clear=True):
+   config=review.purchase_config()
+   self.assertEqual(config['STATUS_VALUE'],'C');self.assertEqual(config['MOVEMENT_VALUE'],'A')
+   self.assertIn('5102',config['CFOPS']);self.assertNotIn('5929',config['CFOPS'])
+   self.assertNotIn('5202',config['CFOPS']);self.assertNotIn('5152',config['CFOPS'])
+  with patch.dict(os.environ,dict(settings,A7_PURCHASE_CFOPS="5102');DROP TABLE nota;--"),clear=True):
+   with self.assertRaises(review.HTTPException):review.purchase_config()
 
  def test_fiscal_schema_is_validated_before_query(self):
   from unittest.mock import Mock

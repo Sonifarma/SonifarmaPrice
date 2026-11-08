@@ -84,16 +84,21 @@ def entry_config(prefix='A7_ENTRY_'):
     return fields
 
 
+PURCHASE_CFOPS='1102,2102,3102,1403,2403,5101,5102,5401,5403,6101,6102,6401,6403,7101,7102'
+
+
 def purchase_config():
-    """Fonte fiscal identificada nas amostras; codigos exigem confirmacao do ERP."""
-    if os.getenv('A7_PURCHASE_SOURCE', '').strip() != 'notafiscal':
+    """Fonte fiscal dos CSVs; usuario confirmou C=concluida e A=adiciona estoque."""
+    source=os.getenv('A7_PURCHASE_SOURCE','').strip()
+    # Preserva fontes planas explicitamente configuradas em instalacoes existentes.
+    if source not in {'','notafiscal'} or (not source and os.getenv('A7_PURCHASE_TABLE','').strip()):
         return entry_config('A7_PURCHASE_')
-    if os.getenv('A7_PURCHASE_CONFIRMED', '') != '1':
+    if os.getenv('A7_PURCHASE_CONFIRMED','1').strip()=='0':
         return None
     schema=os.getenv('A7_PURCHASE_SCHEMA', 'public').strip() or 'public'
-    status=os.getenv('A7_PURCHASE_STATUS_VALUE', '').strip()
-    movement=os.getenv('A7_PURCHASE_MOVEMENT_VALUE', '').strip()
-    cfops=[part.strip() for part in os.getenv('A7_PURCHASE_CFOPS', '').split(',') if part.strip()]
+    status=os.getenv('A7_PURCHASE_STATUS_VALUE', '').strip() or 'C'
+    movement=os.getenv('A7_PURCHASE_MOVEMENT_VALUE', '').strip() or 'A'
+    cfops=[part.strip() for part in (os.getenv('A7_PURCHASE_CFOPS', '').strip() or PURCHASE_CFOPS).split(',') if part.strip()]
     if not IDENTIFIER.fullmatch(schema) or not status or not movement or not cfops or any(not re.fullmatch(r'\d{4}',part) for part in cfops):
         raise HTTPException(422,'Confirme esquema, status, movimento de entrada e CFOPs de compra da fonte fiscal.')
     return dict(SOURCE='notafiscal',SCHEMA=schema,STATUS_VALUE=status,MOVEMENT_VALUE=movement,CFOPS=cfops)
