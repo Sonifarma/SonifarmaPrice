@@ -6,7 +6,7 @@
   const number = value => present(value) ? Number(value).toLocaleString('pt-BR', {maximumFractionDigits:2}) : '—';
   const dateBR = value => {const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);return match ? `${match[3]}/${match[2]}/${match[1]}` : 'Não informada';};
   const groups = {supermercados:'Supermercados e atacarejos',perfumarias:'Perfumarias',farmacias_redes:'Farmácias de rede',farmacias_independentes:'Farmácias independentes'};
-  let onlineController,onlineRequest=0;
+  let onlineController,onlineRequest=0,onlineScope=null;
   let entryAvailable = false, current = [], applied = null, offset = 0, hasMore = false, dirty = false;
   let controller, requestId = 0, marketController, marketRequest = 0, marketItems = [];
   let detailController,detailId=0,activeProduct=null,storesController,storesId=0,storesOffset=0;
@@ -123,7 +123,7 @@
   });
   function resetMarket() {
     clearOnline();
-    marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;clearStores('Centro recarregado. Carregando os concorrentes cadastrados no raio atual.');loadSavedStores();
+    marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;clearStores('Centro recarregado. Carregando os concorrentes cadastrados no raio atual.');loadSavedStores();if(marketSelection?.ean)loadOnline();
   }
   function showCenter() {
     $('center-current').textContent=savedCenter?savedCenter.endereco:'Nenhum endereço cadastrado.';
@@ -184,7 +184,8 @@
     closeSuggestions();marketSelection=item;$('eanmerc').value=item.ean;
     $('selected-product').textContent=item.descricao || 'Consultar produto';$('selected-product').disabled=!item.embalagem_id;
     marketController?.abort();marketRequest++;marketItems=[];renderMarket();$('market-search').disabled=false;
-    message('marketmsg','Produto selecionado. Consulte as observações deste EAN.');
+    message('marketmsg','Produto selecionado. Os preços online serão consultados quando o centro e o raio estiverem válidos.');
+    if(savedCenter)loadOnline();else message('online-message','Cadastre o centro da pesquisa para carregar os preços online deste produto.');
   }
   function suggestionMessage(text) {
     const note=document.createElement('div');note.className='suggestion-message';note.textContent=text;
@@ -266,6 +267,7 @@
       return;
     }
     if(!savedCenter){message('marketmsg','Cadastre o endereço do centro para consultar por raio.',true);tab('local');$('center-address').focus();return;}
+    loadOnline();
     closeSuggestions();marketController?.abort();marketController=new AbortController();const token=++marketRequest;
     const params=new URLSearchParams({ean,dias:$('market-days').value,raio:$('raiomerc').value,usar_centro:'true',centro_versao:String(savedCenter.versao)});
     message('marketmsg','Consultando observações importadas…');$('market-search').disabled=true;
@@ -274,16 +276,18 @@
     finally{if(token===marketRequest)$('market-search').disabled=false;}
   });
   function clearOnline() {
-    onlineController?.abort();onlineRequest++;$('online-search').disabled=false;$('online-sources').replaceChildren();
-    empty($('online-rows'),'Consulte os sites para carregar preços deste EAN.',7);message('online-message','Selecione o produto e consulte os sites online.');
+    onlineController?.abort();onlineRequest++;onlineScope=null;$('online-search').disabled=false;$('online-refresh').disabled=false;$('online-sources').replaceChildren();
+    empty($('online-rows'),'Selecione um produto para carregar os preços online.',7);message('online-message','A consulta online inicia ao selecionar o produto. Você também pode clicar em Atualizar preços online.');
   }
-  $('online-search').addEventListener('click',async()=>{
+  async function loadOnline() {
     const query=$('eanmerc').value.trim(),ean=marketSelection?.ean||(/^[0-9]{8,14}$/.test(query)?query:null);
     if(!ean){if(query.length>=2)await lookupProducts(query);message('online-message','Selecione um produto encontrado ou informe o EAN completo.',true);return;}
     if(!savedCenter){message('online-message','Cadastre o centro para selecionar as redes dentro do raio.',true);tab('local');return;}
     const radius=Number($('raiomerc').value);
     if(!Number.isFinite(radius)||radius<.5||radius>50){message('online-message','Informe um raio entre 0,5 e 50 km.',true);return;}
-    clearOnline();onlineController=new AbortController();const token=++onlineRequest;$('online-search').disabled=true;closeSuggestions();
+    const scope=JSON.stringify([ean,radius,savedCenter.versao]);
+    if(onlineScope===scope&&$('online-search').disabled)return;
+    clearOnline();onlineScope=scope;onlineController=new AbortController();const token=++onlineRequest;$('online-search').disabled=true;$('online-refresh').disabled=true;closeSuggestions();
     message('online-message','Consultando catálogos públicos pelo EAN; a consulta pode levar até um minuto.');
     try {
       const data=await json('/api/mercado/online/consultar',{method:'POST',headers:configHeaders(),body:JSON.stringify({ean,raio:radius,centro_versao:savedCenter.versao}),signal:onlineController.signal});
@@ -302,9 +306,11 @@
       if(!count)empty($('online-rows'),'Nenhuma oferta retornada pelas fontes consultadas. Confira o estado de cada fonte acima.',7);
       if(data.sem_integracao.length){const note=document.createElement('p');note.textContent='Lojas ainda sem integração de preços: '+data.sem_integracao.join(', ')+'.';$('online-sources').append(note);}
       message('online-message',`${count} oferta(s) de site para EAN ${data.ean}. `+(data.fontes.length?data.aviso:'Nenhuma rede integrada foi identificada no cadastro dentro do raio. Busque ou confira os concorrentes cadastrados.'));
-    }catch(error){if(error.name!=='AbortError'&&token===onlineRequest)message('online-message',error.message,true);}
-    finally{if(token===onlineRequest)$('online-search').disabled=false;}
-  });
+    }catch(error){if(error.name!=='AbortError'&&token===onlineRequest){empty($('online-rows'),'Consulta online não concluída. Use Atualizar preços online para tentar novamente.',7);message('online-message',error.message,true);}}
+    finally{if(token===onlineRequest){$('online-search').disabled=false;$('online-refresh').disabled=false;}}
+  }
+  $('online-search').addEventListener('click',loadOnline);
+  $('online-refresh').addEventListener('click',loadOnline);
   function marketScope(ean) {
     if(!savedCenter)throw Error('Cadastre o centro da pesquisa para comparar por grupo e raio.');
     const radius=Number($('raiomerc').value),days=Number($('market-days').value);
@@ -402,6 +408,7 @@
     try {
       const data=await json('/api/mercado/lojas/buscar',{method:'POST',headers:configHeaders(),body:JSON.stringify({raio:radius,centro_versao:version}),signal:storesController.signal});
       if(token!==storesId)return;
+      if(marketSelection?.ean){clearOnline();loadOnline();}
       await loadSavedStores(0,data.fallback?data.aviso:`${data.lojas.length} cadastros no raio. Busca ${data.cache?'em cache':'online'} concluída. ${data.cadastro.adicionados} novos e ${data.cadastro.atualizados} atualizados.`,Boolean(data.fallback));
     }catch(error){if(error.name!=='AbortError'&&token===storesId)await loadSavedStores(0,'A busca online não foi concluída: '+error.message+' Exibindo o cadastro salvo.',true);}
     finally{$('stores-search').disabled=false;}

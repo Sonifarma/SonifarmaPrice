@@ -29,3 +29,8 @@ Fontes para conferir as ofertas: [Drogal — produto](https://www.drogal.com.br/
 O site informado pelo operador é [www.drogariatododia.com](https://www.drogariatododia.com/). Os testes de acesso de 07/11/2026 retornaram HTTP 403, inclusive em robots.txt; não foi validado coletor automático para essa plataforma. Isso não comprova que o site esteja indisponível para o navegador ou servidor do operador.
 
 Quando há uma Todo Dia cadastrada no raio, o painel online apresenta a fonte como **consulta manual**, com link para o site e orientação para pesquisar o EAN. Reconhece Drogaria Todo Dia, Droga Todo Dia, Drogaria Tododia ou a raiz de CNPJ 12.834.185. Não faz requisições automáticas para essa fonte, não importa preços de resultados de buscadores e não apresenta valores sem coleta validada. A integração automática depende de acesso público verificável ou de uma API/feed autorizado da rede. Drogal e Drogaria São Paulo continuam com as consultas automáticas já integradas.
+
+
+## Início automático da consulta — V1.2.2
+
+Selecionar um produto inicia a consulta online quando centro e raio estão válidos. Confirmar ou recarregar o centro retoma a consulta do produto selecionado. O botão de consulta de observações também inicia a busca online para o EAN digitado, e o novo botão Atualizar preços online fica no próprio painel de resultados. Requisições simultâneas para o mesmo EAN, raio e versão do centro não são duplicadas. Alterar o produto cancela a exibição anterior. Uma busca de lojas concluída retoma a consulta do produto para considerar as redes recém-cadastradas. As fontes, condições e cache permanecem os mesmos; não há coleta contínua em segundo plano.
