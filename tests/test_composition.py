@@ -53,5 +53,5 @@ class CompositionTests(unittest.TestCase):
   source=dict(fonte='drogal',rede='Drogal',grupo='farmacias_redes',ofertas=[])
   offer=dict(ean='7890000000000',preco=10)
   with patch.object(online,'query_composition',return_value=dict(ofertas=[offer,offer],estado='consultado',coletado_em='2026-11-08',desatualizado=False)) as query:
-   data=online.composition_results(None,TITLE,None,[source,dict(source,fonte='tododia')])
+   data=online.composition_results(None,TITLE,None,[source,dict(source,fonte='nao_integrada')])
   self.assertEqual(query.call_count,1);self.assertEqual(len(data['ofertas']),1)
