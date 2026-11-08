@@ -23,7 +23,7 @@
     });
   }
   document.querySelectorAll('.nav').forEach(button => button.addEventListener('click', () => tab(button.dataset.tab)));
-  function message(id, text, error = false) {$(id).textContent = text;$(id).className = error ? 'error' : 'muted';}
+  function message(id, text, error = false) {window.PriceHelp.message(id,text,error);}
   async function json(url, options = {}) {
     const response = await fetch(url, options), data = await response.json();
     if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
@@ -242,7 +242,7 @@
   function renderMarketInto(items,body,chart) {
     body.replaceChildren();chart.replaceChildren();
     if(!items.length) {empty(body,'Nenhuma observação neste filtro.',7);chart.textContent='Nenhuma observação importada neste filtro.';return;}
-    items.forEach(item=>{const row=document.createElement('tr');[groups[item.grupo]||item.grupo,item.estabelecimento,number(item.distancia_km)+' km',money(item.preco),dateBR(item.coletado_em),item.condicao,item.fonte].forEach(text=>cell(row,text));body.append(row);});
+    items.forEach(item=>{const row=document.createElement('tr');[groups[item.grupo]||item.grupo,item.estabelecimento,number(item.distancia_km)+' km',money(item.preco),dateBR(item.coletado_em),item.condicao,item.fonte].forEach((text,index)=>cell(row,text,index===5?'condition-info':''));body.append(row);});
     renderPriceChart(items,chart,'Nenhum preço disponível neste filtro.');
   }
   function renderPriceChart(items,chart,emptyText) {
@@ -330,9 +330,9 @@
   function renderOnline(data,prefix) {
       $(prefix+'-rows').replaceChildren();$(prefix+'-sources').replaceChildren();let count=0;const chartItems=[];
       data.fontes.forEach(source=>{
-        const note=document.createElement('p');note.textContent=source.rede+' — '+(source.mensagem||(source.ofertas.length?`${source.ofertas.length} oferta(s) ${source.cache?'em cache':'consultada(s)'}.`:'Sem oferta disponível com esse EAN no catálogo.'));$(prefix+'-sources').append(note);
+        const note=document.createElement('p');note.dataset.helpLabel=source.rede;note.dataset.helpKind=source.desatualizado||!source.ofertas.length?'warning':'info';note.textContent=source.rede+' — '+(source.mensagem||(source.ofertas.length?`${source.ofertas.length} oferta(s) ${source.cache?'em cache':'consultada(s)'}.`:'Sem oferta disponível com esse EAN no catálogo.'));$(prefix+'-sources').append(note);
         if(source.url_consulta){const link=document.createElement('a');link.href=source.url_consulta;link.textContent='Abrir site da '+source.rede+' para consulta manual';link.target='_blank';link.rel='noopener noreferrer';note.append(' ',link);}
-        if(source.aviso_descricao){const warning=document.createElement('p');warning.textContent=source.aviso_descricao;$(prefix+'-sources').append(warning);}
+        if(source.aviso_descricao){const warning=document.createElement('p');warning.dataset.helpLabel='Aviso da busca';warning.dataset.helpKind='warning';warning.textContent=source.aviso_descricao;$(prefix+'-sources').append(warning);}
         if(source.candidatos?.length){
           const box=document.createElement('div');box.className='panel';const heading=document.createElement('h3');heading.textContent=source.rede+' — produtos encontrados pela descrição'+(source.candidatos_coletado_em?' · '+new Date(source.candidatos_coletado_em).toLocaleString('pt-BR'):'');box.append(heading);
           const warning=document.createElement('p');warning.className='notice';warning.textContent='Confira dosagem, quantidade, tamanho, fabricante e embalagem. Candidatos com EAN diferente só entram no gráfico após sua escolha nesta consulta.';box.append(warning);
@@ -347,15 +347,15 @@
           });$(prefix+'-sources').append(box);
         }
         source.ofertas.forEach(offer=>{
-          count++;chartItems.push({grupo:source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:offer.condicao+(source.desatualizado?' · Coleta anterior':'')});const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean+(offer.correspondencia==='descricao_confirmada'?' · Escolhido por descrição nesta consulta':''));cell(row,(offer.em_oferta&&present(offer.preco_regular)?'De '+money(offer.preco_regular)+' por ':'')+money(offer.preco));cell(row,offer.condicao+' Preço da filial não confirmado.');
+          count++;chartItems.push({grupo:source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:offer.condicao+(source.desatualizado?' · Coleta anterior':'')});const row=document.createElement('tr');cell(row,source.rede);cell(row,offer.produto+' · EAN '+offer.ean+(offer.correspondencia==='descricao_confirmada'?' · Escolhido por descrição nesta consulta':''));cell(row,(offer.em_oferta&&present(offer.preco_regular)?'De '+money(offer.preco_regular)+' por ':'')+money(offer.preco));cell(row,offer.condicao+' Preço da filial não confirmado.','condition-info');
           cell(row,(source.coletado_em?new Date(source.coletado_em).toLocaleString('pt-BR'):'Não informada')+(source.desatualizado?' · COLETA ANTERIOR — fonte indisponível':source.cache?' · cache':''));
           cell(row,source.lojas_no_raio.map(store=>store.nome+' — '+store.endereco+' ('+number(store.distancia_km)+' km)').join('; '));
           const target=cell(row,'');const link=document.createElement('a');link.href=offer.url;link.textContent='Conferir oferta no site';link.target='_blank';link.rel='noopener noreferrer';target.append(link);$(prefix+'-rows').append(row);
         });
       });
-      if(data.links_pesquisa?.length){const links=document.createElement('p');links.textContent='Pesquisa manual pela descrição em outros sites (presença no raio não verificada): ';data.links_pesquisa.forEach(source=>{const link=document.createElement('a');link.href=source.url;link.textContent=source.nome;link.target='_blank';link.rel='noopener noreferrer';links.append(link,' · ');});$(prefix+'-sources').append(links);}
+      if(data.links_pesquisa?.length){const links=document.createElement('p');links.dataset.helpLabel='Outros sites';links.textContent='Pesquisa manual pela descrição em outros sites (presença no raio não verificada): ';data.links_pesquisa.forEach(source=>{const link=document.createElement('a');link.href=source.url;link.textContent=source.nome;link.target='_blank';link.rel='noopener noreferrer';links.append(link,' · ');});$(prefix+'-sources').append(links);}
       if(!count)empty($(prefix+'-rows'),'Nenhuma oferta retornada pelas fontes consultadas. Confira o estado de cada fonte acima.',7);
-      if(data.sem_integracao.length){const note=document.createElement('p');note.textContent='Lojas ainda sem integração de preços: '+data.sem_integracao.join(', ')+'.';$(prefix+'-sources').append(note);}
+      if(data.sem_integracao.length){const note=document.createElement('p');note.dataset.helpLabel='Redes sem integração';note.dataset.helpKind='warning';note.textContent='Lojas ainda sem integração de preços: '+data.sem_integracao.join(', ')+'.';$(prefix+'-sources').append(note);}
       message(prefix+'-message',`${count} oferta(s) de site para ${data.ean?'EAN '+data.ean:'a descrição informada'}. `+(data.busca_normalizada?' Busca: '+data.busca_normalizada+'. ':'')+(data.fontes.length?data.aviso:'Nenhuma rede integrada foi identificada no cadastro dentro do raio. Busque ou confira os concorrentes cadastrados.'));
       renderPriceChart(chartItems,$(prefix+'-chart'),'Nenhum preço online obtido para este EAN. Confira o estado das fontes acima.');
       renderComposition(data.composicao,$(prefix+'-chart'));
@@ -529,7 +529,7 @@
         const identified=store.cnpj_origem?.startsWith('Pesquisa de filial por endereco - ');
         text.textContent=info?`${info.razao_social||''} · ${info.descricao_situacao_cadastral||''} · CNAE ${info.cnae_fiscal||''}: ${info.cnae_fiscal_descricao||''}. Consulta: ${dateBR(info.consultado_em)}. ${identified?'Filial identificada por endereço.':'Confira o vínculo com esta filial.'}`:'CNPJ ainda não identificado com segurança. A loja continua disponível na pesquisa de mercado.';
         if(info){
-          const fiscal=document.createElement('p');fiscal.className='muted';fiscal.textContent='Endereço cadastral: '+[info.descricao_tipo_de_logradouro,info.logradouro,info.numero,info.complemento,info.municipio,info.uf].filter(Boolean).join(' · ');details.append(fiscal);
+          const fiscal=document.createElement('p');fiscal.dataset.helpKeep='true';fiscal.className='muted';fiscal.textContent='Endereço cadastral: '+[info.descricao_tipo_de_logradouro,info.logradouro,info.numero,info.complemento,info.municipio,info.uf].filter(Boolean).join(' · ');details.append(fiscal);
           const source=document.createElement('a');source.href='https://brasilapi.com.br/api/cnpj/v1/'+store.cnpj;source.textContent='Fonte dos dados cadastrais';source.target='_blank';source.rel='noopener noreferrer';details.append(source);
         }
         if(store.cnpj_status==='falha_consulta')text.textContent+=' A última tentativa falhou; os dados anteriores foram preservados.';
