@@ -131,16 +131,16 @@ def parse_offers(products,source,ean):
  return result[:20]
 
 
-def query_source(path,key,ean,descricao=""):
+def query_source(path,key,ean,descricao="",force=False):
  source=SOURCES[key]
  with database(path) as con:row=con.execute('SELECT * FROM catalogos_online WHERE fonte=? AND ean=?',(key,ean)).fetchone()
  cutoff=(datetime.now(timezone.utc)-timedelta(minutes=15)).isoformat()
- if row and row['coletado_em']>=cutoff:
+ if not force and row and row['coletado_em']>=cutoff:
   return {'ofertas':json.loads(row['ofertas']),'coletado_em':row['coletado_em'],'cache':True,'desatualizado':False,'estado':'cache'}
  if not locks[key].acquire(blocking=False):
   return {'ofertas':json.loads(row['ofertas']) if row else [],'coletado_em':row['coletado_em'] if row else None,'cache':bool(row),'desatualizado':True,'estado':'ocupado','mensagem':'Consulta desta fonte em andamento. Aguarde.'}
  try:
-  data=todo_dia.lookup(path,profile(descricao) if descricao.strip() else None,ean=ean) if source.get('adaptador')=='navegador' else catalog(source,ean)
+  data=todo_dia.lookup(path,profile(descricao) if descricao.strip() else None,ean=ean,force=force) if source.get('adaptador')=='navegador' else catalog(source,ean)
   timestamp=min((offer['coletado_em'] for offer in data if offer.get('coletado_em')),default=now())
   with database(path) as con:con.execute('INSERT INTO catalogos_online VALUES(?,?,?,?) ON CONFLICT(fonte,ean) DO UPDATE SET coletado_em=excluded.coletado_em,ofertas=excluded.ofertas',(key,ean,timestamp,json.dumps(data,ensure_ascii=False)))
   return {'ofertas':data,'coletado_em':timestamp,'cache':False,'desatualizado':False,'estado':'consultado'}
@@ -180,15 +180,15 @@ def description_catalog(source,wanted):
  return sorted(candidates,key=lambda c:(bool(c['oferta']),c['pontuacao']),reverse=True)[:6]
 
 
-def query_description(path,key,wanted):
+def query_description(path,key,wanted,force=False):
  fingerprint=hashlib.sha256(wanted['descricao'].encode()).hexdigest()
  with database(path) as con:row=con.execute('SELECT * FROM catalogos_descricao WHERE fonte=? AND chave=?',(key,fingerprint)).fetchone()
  cutoff=(datetime.now(timezone.utc)-timedelta(minutes=15)).isoformat()
- if row and row['coletado_em']>=cutoff:
+ if not force and row and row['coletado_em']>=cutoff:
   return {'candidatos':json.loads(row['candidatos']),'coletado_em':row['coletado_em'],'cache':True,'desatualizado':False}
  if not locks[key].acquire(blocking=False):return {'candidatos':[],'coletado_em':None,'cache':False,'desatualizado':False,'mensagem':'Busca por descricao em andamento nesta fonte. Aguarde e atualize.'}
  try:
-  candidates=todo_dia.description(path,wanted) if SOURCES[key].get('adaptador')=='navegador' else description_catalog(SOURCES[key],wanted)
+  candidates=todo_dia.description(path,wanted,force=force) if SOURCES[key].get('adaptador')=='navegador' else description_catalog(SOURCES[key],wanted)
   timestamp=min((c['oferta']['coletado_em'] for c in candidates if c.get('oferta') and c['oferta'].get('coletado_em')),default=now())
   with database(path) as con:con.execute('INSERT INTO catalogos_descricao VALUES(?,?,?,?) ON CONFLICT(fonte,chave) DO UPDATE SET coletado_em=excluded.coletado_em,candidatos=excluded.candidatos',(key,fingerprint,timestamp,json.dumps(candidates,ensure_ascii=False)))
   return {'candidatos':candidates,'coletado_em':timestamp,'cache':False,'desatualizado':False}
@@ -218,17 +218,17 @@ def composition_catalog(source,ref):
  return offers[:30]
 
 
-def query_composition(path,key,ref):
+def query_composition(path,key,ref,force=False):
  fingerprint='composicao-v1:'+hashlib.sha256(json.dumps(ref,sort_keys=True).encode()).hexdigest()
  with database(path) as con:row=con.execute('SELECT * FROM catalogos_descricao WHERE fonte=? AND chave=?',(key,fingerprint)).fetchone()
  cutoff=(datetime.now(timezone.utc)-timedelta(minutes=15)).isoformat()
- if row and row['coletado_em']>=cutoff:
+ if not force and row and row['coletado_em']>=cutoff:
   return dict(ofertas=json.loads(row['candidatos']),coletado_em=row['coletado_em'],desatualizado=False,estado='cache')
  if not locks[key].acquire(blocking=False):return dict(ofertas=[],coletado_em=None,desatualizado=False,estado='ocupado')
  try:
   if SOURCES[key].get('adaptador')=='navegador':
    wanted=profile(composition.query_text(ref)+' '+str(ref.get('quantidade') or '')+' '+ref['forma'])
-   offers=todo_dia.lookup(path,wanted,ref=ref)
+   offers=todo_dia.lookup(path,wanted,ref=ref,force=force)
   else:offers=composition_catalog(SOURCES[key],ref)
   timestamp=min((offer['coletado_em'] for offer in offers if offer.get('coletado_em')),default=now())
   with database(path) as con:con.execute('INSERT INTO catalogos_descricao VALUES(?,?,?,?) ON CONFLICT(fonte,chave) DO UPDATE SET coletado_em=excluded.coletado_em,candidatos=excluded.candidatos',(key,fingerprint,timestamp,json.dumps(offers,ensure_ascii=False)))
@@ -239,13 +239,13 @@ def query_composition(path,key,ref):
  finally:locks[key].release()
 
 
-def composition_results(path,description,ean,sources):
+def composition_results(path,description,ean,sources,force=False):
  ref=composition.reference(description,sources,ean)
  if ref is None:return {'referencia':None,'ofertas':[],'fontes':[],'mensagem':'Composicao, concentracao ou apresentacao incompleta. Nao foi possivel comparar outros laboratorios com seguranca.'}
  offers=[];states=[];seen=set()
  for source in sources:
   if source['fonte'] not in SOURCES:continue
-  result=query_composition(path,source['fonte'],ref)
+  result=query_composition(path,source['fonte'],ref,force=force)
   states.append({'rede':source['rede'],'estado':result['estado'],'coletado_em':result['coletado_em']})
   for offer in result['ofertas']:
    identity=(source['fonte'],offer['ean'])
@@ -261,6 +261,7 @@ class OnlineSearch(BaseModel):
  selecoes:dict[str,str]=Field(default_factory=dict,max_length=4)
  raio:float=Field(2,ge=.5,le=50)
  centro_versao:int=Field(ge=1)
+ atualizar:bool=False
 
 
 def matches(store,source):
@@ -286,14 +287,16 @@ def make_router(path,distance):
   center=get_center(path())
   if center is None:raise HTTPException(422,'Cadastre o centro da pesquisa.')
   if center['versao']!=body.centro_versao:raise HTTPException(409,'Centro alterado. Recarregue o cadastro.')
-  stores=within_radius(path(),center,body.raio,distance);results=[];supported=set()
+  stores=within_radius(path(),center,body.raio,distance);results=[];supported=set();not_queried=[]
   for key,source in SOURCES.items():
    related=[store for store in stores if matches(store,source)]
-   if not related:continue
+   if not related:
+    not_queried.append({'fonte':key,'rede':source['nome'],'motivo':'Nenhuma loja desta rede foi identificada no cadastro dentro do raio atual. Confira o nome da loja, o centro e o raio.'})
+    continue
    supported.update(store['id'] for store in related)
-   result=query_source(path(),key,body.ean,body.descricao) if body.ean else {'ofertas':[],'coletado_em':None,'cache':False,'desatualizado':False,'estado':'descricao'}
+   result=query_source(path(),key,body.ean,body.descricao,force=body.atualizar) if body.ean else {'ofertas':[],'coletado_em':None,'cache':False,'desatualizado':False,'estado':'descricao'}
    if wanted and (not result['ofertas'] or key in body.selecoes):
-    found=query_description(path(),key,wanted);candidates=found['candidatos']
+    found=query_description(path(),key,wanted,force=body.atualizar);candidates=found['candidatos']
     selected=body.selecoes.get(key)
     confirmed=next((c for c in candidates if c['ean']==selected and c['oferta']),None) if selected else None
     exact=next((c for c in candidates if c['ean']==body.ean and c['oferta']),None)
@@ -309,6 +312,6 @@ def make_router(path,distance):
     if found.get('desatualizado'):result['aviso_descricao']='Busca por descricao com coleta anterior; confira a data.'
    result.update(fonte=key,rede=source['nome'],grupo=group_for_stores(related),lojas_no_raio=[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related])
    results.append(result)
-  return {'composicao':composition_results(path(),body.descricao,body.ean,results),'ean':body.ean,'centro':center,'raio_km':body.raio,'descricao_original':body.descricao.strip(),'busca_normalizada':wanted['descricao'] if wanted else None,'links_pesquisa':[{'nome':name,'url':'https://www.google.com/search?'+urlencode({'q':'site:'+host+' '+wanted['descricao']})} for name,host in [('Drogasil','www.drogasil.com.br')]] if wanted else [],'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
+  return {'fontes_nao_consultadas':not_queried,'composicao':composition_results(path(),body.descricao,body.ean,results,force=body.atualizar),'ean':body.ean,'centro':center,'raio_km':body.raio,'descricao_original':body.descricao.strip(),'busca_normalizada':wanted['descricao'] if wanted else None,'links_pesquisa':[{'nome':name,'url':'https://www.google.com/search?'+urlencode({'q':'site:'+host+' '+wanted['descricao']})} for name,host in [('Drogasil','www.drogasil.com.br')]] if wanted else [],'fontes':results,'sem_integracao':[s['nome'] for s in stores if s['id'] not in supported],
     'aviso':'Precos dos sites das redes com lojas cadastradas no raio. O valor e a disponibilidade na filial fisica nao foram confirmados. Nao inclui frete ou beneficios pessoais; confira as condicoes na fonte. Estes valores nao sao incorporados ao grafico de observacoes locais.'}
  return router
