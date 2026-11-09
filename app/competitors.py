@@ -193,6 +193,29 @@ def enrich_pending(path,sources):
         except HTTPException:pass
 
 
+# Sites das redes informados pelo operador. Complementam apenas campos vazios;
+# nao confirmam preco/estoque da filial nem criam uma integracao de catalogo.
+NETWORK_SITES={
+    'DROGAL':'https://www.drogal.com.br/',
+    'FARMACIA DROGAL':'https://www.drogal.com.br/',
+    'FARMACIAS DROGAL':'https://www.drogal.com.br/',
+    'TENDA ATACADO':'https://www.tendaatacado.com.br/',
+    'ATACADO TENDA':'https://www.tendaatacado.com.br/',
+    'HIGA':'https://www.higa.com.br/',
+    'ATACADO HIGA':'https://www.higa.com.br/',
+    'HIGA ATACADO':'https://www.higa.com.br/',
+    'HIGA ATACADISTA':'https://www.higa.com.br/',
+}
+
+
+def complement_site(item):
+    site=NETWORK_SITES.get(normalized(item['nome']))
+    if not str(item.get('site') or '').strip() and site:
+        item.update(site=site,site_origem='informado_pelo_operador',site_abrangencia='rede',
+                    site_status='Site da rede informado pelo operador; preco e disponibilidade da filial nao confirmados.')
+    return item
+
+
 def within_radius(path,center,radius,distance):
     span=radius/110.0
     with database(path) as con:
@@ -203,6 +226,7 @@ def within_radius(path,center,radius,distance):
         if dist>radius:continue
         item['distancia_km']=round(dist,3)
         item['dados_cnpj']=json.loads(item['dados_cnpj']) if item['dados_cnpj'] else None
+        complement_site(item)
         item['fonte_url']=(('https://brasilapi.com.br/api/cnpj/v1/'+item['cnpj']) if item['cnpj'] else None) if item['fonte_id'].startswith('manual/') else 'https://www.openstreetmap.org/'+item['fonte_id']
         item['fonte']='Cadastro por CNPJ / operador' if item['fonte_id'].startswith('manual/') else 'OpenStreetMap'
         items.append(item)

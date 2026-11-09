@@ -522,7 +522,7 @@
     rows.forEach(store=>{
       const row=document.createElement('tr');cell(row,store.nome);cell(row,'').append(groupLabel(row,store));cell(row,number(store.distancia_km)+' km');
       const site=cell(row,'');
-      if(store.site){const link=document.createElement('a');link.href=store.site;link.textContent=new URL(store.site).hostname;link.target='_blank';link.rel='noopener noreferrer';site.append(link);}else site.textContent='Site não informado';
+      if(store.site){const link=document.createElement('a');link.href=store.site;link.textContent=new URL(store.site).hostname;link.title=store.site_status||'Site informado no cadastro';link.target='_blank';link.rel='noopener noreferrer';site.append(link);}else site.textContent='Site não informado';
       const source=cell(row,'');const link=document.createElement('a');if(store.fonte_url){link.href=store.fonte_url;link.textContent=store.fonte_id.startsWith('manual/')?'CNPJ informado':'Cadastro OSM';link.target='_blank';link.rel='noopener noreferrer';source.append(link);}else source.textContent='Cadastro manual';
       groupControls(cell(row,''),store,'stores-message');$('stores-rows').append(row);
     });
@@ -582,7 +582,7 @@
         const distance=document.createElement('span');distance.className='badge';distance.textContent=number(store.distancia_km)+' km';location.append(name,address,distance);
         const group=cell(row,'','directory-group');group.dataset.label='Grupo';group.append(groupLabel(row,store));groupControls(group,store,'competitors-message',true);
         const links=cell(row,'','directory-sites');links.dataset.label='Sites e fontes';const sites=document.createElement('div');sites.className='directory-site-links';
-        for(const [url,label] of [[store.site,'Site da loja'],[store.fonte_url,store.fonte_id.startsWith('manual/')?'CNPJ informado':'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';sites.append(a);}
+        for(const [url,label] of [[store.site,store.site_abrangencia==='rede'?'Site da rede':'Site da loja'],[store.fonte_url,store.fonte_id.startsWith('manual/')?'CNPJ informado':'Cadastro OSM']])if(url){const a=document.createElement('a');a.href=url;a.textContent=label;a.target='_blank';a.rel='noopener noreferrer';sites.append(a);}
         if(store.fonte_id.startsWith('manual/')){const origin=document.createElement('span');origin.textContent='Cadastro manual';sites.prepend(origin);}
         if(!store.site){const missing=document.createElement('span');missing.className='muted';missing.textContent='Site não informado';sites.prepend(missing);}links.append(sites);
         const details=cell(row,'','directory-registration');details.dataset.label='CNPJ / cadastro';
