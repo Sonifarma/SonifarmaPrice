@@ -1,4 +1,4 @@
-import os,csv,io,math
+import os,csv,io,math,hashlib
 from pathlib import Path
 from datetime import datetime,timedelta
 from decimal import Decimal
@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.7.9')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.7.10')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
@@ -32,7 +32,12 @@ SQL='''SELECT p.id AS produto_id,p.codigo,p.descricao,p.status,e.id AS embalagem
 
 def mode():return os.getenv('MODE','demo').lower()
 @app.get('/',response_class=HTMLResponse)
-def home():return (BASE/'static'/'index.html').read_text(encoding='utf-8')
+def home():
+ html=(BASE/'static'/'index.html').read_text(encoding='utf-8')
+ for name in ['sonifarma-theme.css','help.js','app.js']:
+  fingerprint=hashlib.sha256((BASE/'static'/name).read_bytes()).hexdigest()[:12]
+  html=html.replace('/static/'+name+'"','/static/'+name+'?v='+fingerprint+'"')
+ return HTMLResponse(html,headers={'Cache-Control':'no-store','Pragma':'no-cache','Expires':'0','X-Price-Version':app.version})
 @app.get('/api/status')
 def status():return {'mode':mode(),'unit':os.getenv('A7_UNIT','1'),'write_enabled':False,'pricing_enabled':False,'collector_enabled':False}
 @app.get('/api/products')
