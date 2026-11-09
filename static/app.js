@@ -9,6 +9,7 @@
   let onlineController,onlineRequest=0,onlineScope=null,detailOnlineRequest=0;
   const onlinePending=new Map(),onlineChoices=new Map();
   let entryAvailable = false,periodPresets={},loadingProducts=false,appendFailed=false, current = [], applied = null, offset = 0, hasMore = false, dirty = false;
+  let productSearchTimer, queryComposing=false;
   let controller, requestId = 0, marketController, marketRequest = 0, marketItems = [];
   let detailController,detailId=0,activeProduct=null,storesController,storesId=0,storesOffset=0;
   let savedCenter=null, chosenCenter=null, centerLookupId=0, centerController;
@@ -58,15 +59,24 @@
     }
     $('date-end').setCustomValidity('');return true;
   }
-  function markDirty() {dirty=true;controller?.abort();requestId++;loadingProducts=false;$('product-scroll').setAttribute('aria-busy','false');updatePages();message('msg','Filtros alterados. Clique em Consultar produtos para aplicar.');}
+  function markDirty() {clearTimeout(productSearchTimer);dirty=true;controller?.abort();requestId++;loadingProducts=false;$('product-scroll').setAttribute('aria-busy','false');updatePages();message('msg','Filtros alterados. Clique em Consultar produtos para aplicar.');}
   $('period').addEventListener('change', () => {periodFields();markDirty();});
   ['date-start','date-end'].forEach(id => $(id).addEventListener('input', () => {$('period').value='intervalo';periodFields(false);markDirty();}));
   $('period-done').addEventListener('click', () => {if(validPeriod()) $('period-filter').open=false;});
   document.addEventListener('click', event => {if(!$('period-filter').contains(event.target)) $('period-filter').open=false;});
   $('period-filter').addEventListener('keydown', event => {if(event.key==='Escape') {$('period-filter').open=false;$('period-filter').querySelector('summary').focus();}});
-  ['q','search-mode','min-margin','only-review','stock-only','price-type','product-status'].forEach(id => $(id).addEventListener('input',markDirty));
+  ['min-margin','only-review','stock-only','price-type','product-status'].forEach(id => $(id).addEventListener('input',markDirty));
+  function scheduleProductSearch(event) {
+    markDirty();
+    if(queryComposing||event?.isComposing)return;
+    message('msg','Atualizando a busca por produto, EAN ou código…');
+    productSearchTimer=setTimeout(()=>{if(validPeriod())load(parameters());},350);
+  }
+  $('q').addEventListener('input',scheduleProductSearch);
+  $('q').addEventListener('compositionstart',()=>{queryComposing=true;markDirty();});
+  $('q').addEventListener('compositionend',()=>{queryComposing=false;scheduleProductSearch();});
   function parameters() {
-    const params = new URLSearchParams({q:$('q').value,modo:$('search-mode').value,periodo:$('period').value,data_filtro:'compra',tipo_preco:$('price-type').value,status_produto:$('product-status').value,
+    const params = new URLSearchParams({q:$('q').value,modo:'produto',periodo:$('period').value,data_filtro:'compra',tipo_preco:$('price-type').value,status_produto:$('product-status').value,
       margem_minima:$('min-margin').value,somente_revisar:String($('only-review').checked),somente_estoque:String($('stock-only').checked),limit:'100'});
     if($('period').value==='intervalo') {params.set('inicio',$('date-start').value);params.set('fim',$('date-end').value);}
     return params;
@@ -91,6 +101,7 @@
   }
   async function load(params,nextOffset=0,append=false) {
     if(append&&(loadingProducts||dirty||!hasMore))return;
+    clearTimeout(productSearchTimer);
     controller?.abort();controller=new AbortController();const token=++requestId;
     params=new URLSearchParams(params);params.set('offset',String(nextOffset));loadingProducts=true;appendFailed=false;
     $('product-scroll').setAttribute('aria-busy','true');updatePages();

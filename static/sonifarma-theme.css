@@ -28,3 +28,5 @@
 .online-candidate-list{padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin:8px 0;color:var(--text);background:#fff}.online-candidate-list>summary{cursor:pointer;font-size:13px;font-weight:650;color:var(--soni-turquesa-escuro)}.online-candidate-list[open]>summary{margin-bottom:10px}
 
 .manual-competitor{border:1px solid var(--line);border-radius:10px;padding:14px;margin:14px 0}.manual-competitor>summary{cursor:pointer;font-weight:600;color:var(--soni-turquesa-escuro)}.manual-competitor[open]>summary{margin-bottom:16px}.manual-location{padding:12px;border:1px solid var(--line);border-radius:8px;margin-top:10px}.manual-location a{display:inline-block;margin-right:15px}
+
+#product-form .product-query{grid-column:1 / -1}
