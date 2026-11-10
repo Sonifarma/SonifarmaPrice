@@ -35,12 +35,14 @@ class RaiaTests(unittest.TestCase):
    modified=data();modified['productData']['liveComposition']['livePrice']['valueTo']=value;modified['productData']['price_aux']['value_to']=value
    self.assertIsNone(raia.product_offer(modified,URL),value)
   with self.assertRaises(ValueError):raia.product_offer(data(),'https://www.drogaraia.com.br/outro.html')
- def test_search_product_url_is_canonical_and_sponsored_partners_are_excluded(self):
+ def test_search_product_url_is_canonical_and_unverified_partners_are_rejected(self):
   search={'pageProps':{'results':{'products':[{'url':'/produto-teste.html?origin=search','is1P':True,'isThirdPartner':False},{'url':'/parceiro.html','is1P':False,'isThirdPartner':True},{'url':'https://evil.test/roubo','is1P':True,'isThirdPartner':False}]}}}
   calls=[]
-  def fetch(source,path):calls.append(path);return document(search if path.startswith('/search?') else data())
+  def fetch(source,path):
+   calls.append(path)
+   return document(search if path.startswith('/search?') else {'productData':dict(is3p=True,seller=None,status=1)} if path=='/parceiro.html' else data())
   offers=raia.offers(online.SOURCES['raia'],EAN,fetch,ean=EAN)
-  self.assertEqual(len(offers),1);self.assertEqual(calls,['/search?w='+EAN,'/produto-teste.html'])
+  self.assertEqual(len(offers),1);self.assertEqual(calls,['/search?w='+EAN,'/produto-teste.html','/parceiro.html'])
  def test_shared_cnpj_of_drogasil_does_not_imply_raia_store_in_radius(self):
   source=online.SOURCES['raia']
   self.assertTrue(online.matches({'nome':'Droga Raia','cnpj':None},source))

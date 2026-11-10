@@ -271,10 +271,10 @@ def composition_results(path,description,ean,sources,force=False):
   result=query_composition(path,source['fonte'],ref,force=force)
   states.append({'rede':source['rede'],'estado':result['estado'],'coletado_em':result['coletado_em']})
   for offer in result['ofertas']:
-   identity=(source['fonte'],offer['ean'])
+   identity=(source['fonte'],offer['ean'],offer.get('vendedor_id'))
    if identity in seen:continue
    seen.add(identity)
-   offers.append(dict(offer,rede=source['rede'],grupo=source['grupo'],coletado_em=result['coletado_em'],desatualizado=result['desatualizado']))
+   offers.append(dict(offer,rede=source['rede'],grupo=offer.get('grupo_online') or source['grupo'],coletado_em=result['coletado_em'],desatualizado=result['desatualizado']))
  return {'referencia':ref,'ofertas':offers,'fontes':states,'mensagem':'Comparacao de precos pela composicao e apresentacao informadas no catalogo, independente do laboratorio. Nao indica substituicao de medicamento.'}
 
 
