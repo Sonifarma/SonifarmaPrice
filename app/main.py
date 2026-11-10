@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Sonifarma Price Intelligence',version='1.7.13')
+app=FastAPI(title='Sonifarma Price Intelligence',version='1.7.14')
 app.mount('/static',StaticFiles(directory=str(BASE/'static')),name='static')
 
 def db():
