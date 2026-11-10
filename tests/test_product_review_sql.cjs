@@ -32,6 +32,8 @@ for name,price,status,cfg,start,end in [
  cases[name]={'query':query,'params':params}
 from app.product_review import purchase_config
 fiscal=purchase_config()
+query,params=build_query(SQL,fiscal,'timestamp without time zone','ean','7891000071625',date(2026,11,9),date(2026,11,9),Decimal('30'),False,False,100,0,'todos','todos','ultima_compra')
+cases['fiscal_5405']={'query':query,'params':params}
 query,params=build_query(SQL,fiscal,'timestamp without time zone','produto','',date(2026,11,6),date(2026,11,7),Decimal('30'),False,False,100,0,'liberado','ativo','ultima_compra')
 cases['fiscal']={'query':query,'params':params}
 for name,term in [('lookup_middle','uto'),('lookup_ean','4006381333931'),('lookup_literal','%_')]:
@@ -101,6 +103,21 @@ print(json.dumps(cases,default=str))
   assert.equal((await run('lookup_middle'))[0].produto_id,1);
   assert.equal((await run('lookup_ean'))[0].ean,'4006381333931');
   assert.deepEqual(await run('lookup_literal'),[]);
+  await db.exec(`SET default_transaction_read_only=off;`);
+  await db.exec(`
+   INSERT INTO produto(id,codigo,descricao,status) VALUES(42305,'42305','LEITE NAN COMFORT 1 800G','A');
+   INSERT INTO embalagem VALUES(42307,42305,'7891000071625','800G',1,80);
+   INSERT INTO notafiscal VALUES(17929964,1,100,'2026-11-09 16:22:32','C','A'),
+    (17929965,1,100,'2026-11-10','C','A'),(17929966,2,100,'2026-11-10','C','A'),
+    (17929967,1,100,'2026-11-10','I','A');
+   INSERT INTO itemnotafiscal VALUES(17929964,42307,1,false,false,5405),
+    (17929965,42307,1,false,false,5929),(17929965,42307,1,true,false,5405),
+    (17929965,42307,1,false,true,5405),(17929965,42307,0,false,false,5405),
+    (17929966,42307,1,false,false,5405),(17929967,42307,1,false,false,5405);
+SET default_transaction_read_only=on;`);
+  const nan=await run('fiscal_5405');
+  assert.deepEqual(nan.map(r=>r.embalagem_id),[42307]);
+  assert(nan[0].ultima_compra.toISOString().startsWith('2026-11-09'));
   console.log('PostgreSQL simulado OK: unidade, status finalizado, ultima entrada, dia completo, fuso, margem/NaN e paginacao antes do limite.');
  } finally {await db.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

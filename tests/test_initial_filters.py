@@ -31,7 +31,7 @@ class PurchaseMappingTests(unittest.TestCase):
   with patch.dict(os.environ,{},clear=True):
    config=review.purchase_config()
    self.assertEqual(config['STATUS_VALUE'],'C');self.assertEqual(config['MOVEMENT_VALUE'],'A')
-   self.assertIn('5102',config['CFOPS']);self.assertNotIn('5929',config['CFOPS'])
+   self.assertIn('5102',config['CFOPS']);self.assertIn('5405',config['CFOPS']);self.assertNotIn('5929',config['CFOPS'])
    self.assertNotIn('5202',config['CFOPS']);self.assertNotIn('5152',config['CFOPS'])
   with patch.dict(os.environ,dict(settings,A7_PURCHASE_CFOPS="5102');DROP TABLE nota;--"),clear=True):
    with self.assertRaises(review.HTTPException):review.purchase_config()
