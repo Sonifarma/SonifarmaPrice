@@ -346,7 +346,8 @@
     onlinePending.set(key,pending);return pending;
   }
   function onlineVendorDetails(container,source,offer,data,sameEAN) {
-    const detail=document.createElement('div');detail.dataset.helpLabel=source.rede;
+    const vendorLabel=offer.marketplace?offer.vendedor+' · '+source.rede:source.rede;
+    const detail=document.createElement('div');detail.dataset.helpLabel=vendorLabel;
     detail.dataset.helpKind=!sameEAN||source.desatualizado?'warning':'info';
     const fields=document.createElement('dl');fields.className='online-offer-data';
     const add=(label,value)=>{const title=document.createElement('dt'),text=document.createElement('dd');title.textContent=label;text.textContent=value;fields.append(title,text);};
@@ -359,11 +360,12 @@
     if(offer.em_oferta&&present(offer.preco_regular))add('Preço regular',money(offer.preco_regular));
     add('Condições',offer.condicao+' Preço da filial não confirmado.');
     add('Coleta',(source.coletado_em?new Date(source.coletado_em).toLocaleString('pt-BR'):'Não informada')+(source.desatualizado?' · COLETA ANTERIOR — fonte indisponível':source.cache?' · cache':''));
-    add('Grupo',groups[source.grupo]||'Grupo pendente');
-    add('Presença no raio',(source.lojas_no_raio||[]).length+' loja(s) cadastrada(s) desta rede');
+    add('Grupo',offer.grupo_online||groups[source.grupo]||'Grupo pendente');
+    if(offer.marketplace)add('Vendedor',offer.vendedor+' · marketplace da '+source.rede+'; presença no raio não confirmada.');
+    add('Presença no raio',offer.marketplace?'Vendedor sem presença confirmada no raio':(source.lojas_no_raio||[]).length+' loja(s) cadastrada(s) desta rede');
     detail.append(fields);
     try{const url=new URL(offer.url);if(url.protocol==='https:'&&!url.username&&!url.password){const link=document.createElement('a');link.href=url.href;link.textContent='Abrir oferta no site';link.target='_blank';link.rel='noopener noreferrer';detail.append(link);}}catch{}
-    container.append(detail);window.PriceHelp.attach(detail,{label:source.rede,scope:source.rede});
+    container.append(detail);window.PriceHelp.attach(detail,{label:vendorLabel,scope:vendorLabel});
   }
   function renderOnline(data,prefix,systemProduct=null) {
       const systemName=systemProduct&&String(systemProduct.ean||'')===String(data.ean||'')?systemProduct.descricao:'';
@@ -387,7 +389,7 @@
           });$(prefix+'-sources').append(box);
         }
         source.ofertas.forEach(offer=>{
-          count++;chartItems.push({grupo:source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:onlineCondition(offer)+(source.desatualizado?' · Coleta anterior':'')});
+          count++;chartItems.push({grupo:offer.grupo_online||source.grupo||'Grupo pendente — classificar concorrentes',preco:offer.preco,condicao:onlineCondition(offer)+(source.desatualizado?' · Coleta anterior':'')});
           const row=document.createElement('tr'),sameEAN=Boolean(data.ean)&&String(data.ean)===String(offer.ean);
           row.dataset.eanMatch=sameEAN?'same':data.ean?'different':'unconfirmed';
           const vendor=cell(row,'','online-vendor-cell');vendor.dataset.label='Fornecedor';onlineVendorDetails(vendor,source,offer,data,sameEAN);

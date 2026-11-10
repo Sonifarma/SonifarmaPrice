@@ -1,4 +1,4 @@
-"""Dados publicos renderizados pela Droga Raia; sem checkout, conta ou marketplace."""
+"""Dados publicos renderizados pela Droga Raia; sem checkout ou conta; vendedores de marketplace identificados."""
 from html.parser import HTMLParser
 import json,math,re,logging,os
 from pathlib import Path
@@ -40,9 +40,14 @@ def props(raw):
  return data
 
 
-def product_identity(data,url,ean=None):
+def product_identity(data,url,ean=None,allow_marketplace=False):
  product=data.get('productData')
- if not isinstance(product,dict) or product.get('is3p') is not False or product.get('seller') is not None or str(product.get('status'))!='1':return None
+ if not isinstance(product,dict) or str(product.get('status'))!='1':return None
+ seller=product.get('seller')
+ own=product.get('is3p') is False and seller is None
+ partner=allow_marketplace and product.get('is3p') is True and isinstance(seller,dict) and seller.get('active') is True and isinstance(seller.get('storeName'),str) and seller['storeName'].strip() and isinstance(seller.get('id'),str) and seller['id'].strip()
+ if not (own or partner):return None
+ if re.search(r'\bKIT\b',text(str(product.get('name') or ''))):return None
  code=product.get('productEan')
  if not isinstance(code,str) or not re.fullmatch(r'[0-9]{8,14}',code) or (ean and code!=ean):return None
  attrs={item.get('attribute_code'):item.get('value_string') for item in product.get('custom_attributes') or [] if isinstance(item,dict)}
@@ -52,8 +57,8 @@ def product_identity(data,url,ean=None):
  return product,code,attrs
 
 
-def product_offer(data,url,ean=None):
- identity=product_identity(data,url,ean)
+def product_offer(data,url,ean=None,allow_marketplace=False):
+ identity=product_identity(data,url,ean,allow_marketplace)
  if identity is None:return None
  product,code,attrs=identity
  live=product.get('liveComposition') or {};stock=live.get('liveStock') or {};price_data=live.get('livePrice') or {};aux=product.get('price_aux') or {}
@@ -69,22 +74,28 @@ def product_offer(data,url,ean=None):
   regular=max(regular or price,price);price=pix;condition='Oferta para pagamento no Pix; CEP, frete e disponibilidade a confirmar.'
  if aux.get('lmpm_qty') and aux.get('lmpm_value_to'):condition+=' Ha desconto por quantidade, nao aplicado a uma unidade.'
  if product.get('pbm') or product.get('pbmOfferTypes') or price_data.get('bestPrice'):condition+=' Beneficios pessoais/PBM ou outros descontos exigem conferencia; nao foram aplicados.'
+ seller=product.get('seller') if product.get('is3p') is True else None
+ if seller:condition+=' Vendido por '+seller['storeName'].strip()[:100]+' no marketplace da Raia; vendedor sem presenca confirmada no raio.'
  title=str(product.get('name') or '')[:300]
  maker=next(iter(attrs.get('fabricante') or attrs.get('marca') or []),'')
  active=next(iter(attrs.get('principioativonovo') or []),None) or None
  if active:active=text(active)
  return {'ean':code,'produto':title,'preco':price,'preco_regular':regular,'em_oferta':bool(regular and price<regular),
-  'tipo_preco':'oferta' if regular and price<regular else 'normal','moeda':'BRL','url':url,'vendedor':'Droga Raia','laboratorio':str(maker)[:100],
-  'composicao':composition.signature(title,active),'condicao':condition,'abrangencia':'site_da_rede','filial_confirmada':False}
+  'tipo_preco':'oferta' if regular and price<regular else 'normal','moeda':'BRL','url':url,'vendedor':seller['storeName'].strip()[:100] if seller else 'Droga Raia','marketplace':bool(seller),
+  'vendedor_id':seller['id'] if seller else 'raia','grupo_online':'Marketplace — vendedores externos' if seller else None,'laboratorio':str(maker)[:100],
+  'composicao':composition.signature(title,active),'condicao':condition,'abrangencia':'marketplace' if seller else 'site_da_rede','filial_confirmada':False}
 
 
-def search_pages(source,term,fetch,limit=6):
+def search_pages(source,term,fetch,limit=6,allow_marketplace=False):
  data=props(fetch(source,'/search?'+urlencode({'w':term})))
  results=(data.get('pageProps') or {}).get('results')
  if not isinstance(results,dict) or not isinstance(results.get('products'),list):raise RaiaReadError('RAIA_BUSCA_PUBLICA_INVALIDA','Busca publica Raia nao reconhecida.')
  urls=[]
- for item in results['products']:
-  if not isinstance(item,dict) or item.get('is1P') is not True or item.get('isThirdPartner') is not False:continue
+ for item in sorted(results['products'],key=lambda p:not (isinstance(p,dict) and p.get('is1P') is True)):
+  if not isinstance(item,dict):continue
+  own=item.get('is1P') is True and item.get('isThirdPartner') is False
+  partner=allow_marketplace and item.get('is1P') is False and item.get('isThirdPartner') is True
+  if not (own or partner) or item.get('isKit') is True or re.search(r'\bKIT\b',text(str(item.get('name') or ''))):continue
   target=urlsplit(str(item.get('url') or ''))
   if target.hostname and target.hostname!=source['host']:continue
   if target.scheme and target.scheme!='https':continue
@@ -103,10 +114,10 @@ def _offers(source,term,fetch,ean=None,wanted=None,ref=None):
   try:known=product_offer(props(fetch(source,path)),url,ean)
   except (URLError,TimeoutError,ValueError):known=None
   if known:return [known]
- for path in search_pages(source,term,fetch,limit=4 if ean else 6):
+ for path in search_pages(source,term,fetch,limit=6,allow_marketplace=True):
   url='https://'+source['host']+path
   data=props(fetch(source,path))
-  offer=product_offer(data,url,ean)
+  offer=product_offer(data,url,ean,allow_marketplace=True)
   if not offer:
    # Produto proprio identificado, mas sem disponibilidade: permite conferir
    # o catalogo sem transformar preco de referencia em oferta compravel.
@@ -122,15 +133,15 @@ def _offers(source,term,fetch,ean=None,wanted=None,ref=None):
       match['pendencias'].append('Catalogo sem disponibilidade confirmada; consulte CEP e estoque no site')
       result.append(dict(ean=code,produto=title,marca=maker,url=url,oferta=None,**match));seen.add(code)
    continue
-  if offer['ean'] in seen:continue
+  identity=(offer['ean'],offer['vendedor_id'])
+  if identity in seen:continue
   if ref and offer.get('composicao')!=ref:continue
   if wanted:
    match=compare(wanted,offer['produto'],offer['laboratorio'])
    if match is None:continue
    result.append(dict(ean=offer['ean'],produto=offer['produto'],marca=offer['laboratorio'],url=url,oferta=offer,**match))
   else:result.append(offer)
-  seen.add(offer['ean'])
-  if ean:break
+  seen.add(identity)
  return result
 
 
@@ -171,7 +182,8 @@ def offers(source,term,fetch,ean=None,wanted=None,ref=None):
   with standard_browser(source['host']) as browser:
    result=_offers(source,term,lambda source,path:browser.get('https://'+source['host']+path),ean,wanted,ref)
   for row in result:
-   offer=row.get('oferta',row);offer['metodo']='navegador_publico'
+   offer=row.get('oferta',row)
+   if offer is not None:offer['metodo']='navegador_publico'
   return result
 
 
