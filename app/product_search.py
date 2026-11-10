@@ -3,9 +3,9 @@ import re
 import unicodedata
 
 ALIASES={'AMP':'AMPOLAS','AMPS':'AMPOLAS','AMPOLA':'AMPOLAS','FLACONETE':'FLACONETES','GTS':'GOTAS','FRD':'FRALDA','GERIA':'GERIATRICA','GERIAT':'GERIATRICA','CLAS':'CLASSICA',
- 'CAP':'CAPSULAS','CAPS':'CAPSULAS','CAPSULA':'CAPSULAS','CP':'COMPRIMIDOS','CPR':'COMPRIMIDOS','CPRS':'COMPRIMIDOS','COMP':'COMPRIMIDOS','COMPRIMIDO':'COMPRIMIDOS',
+ 'CPS':'CAPSULAS','UNIAOQ':'UNIAO QUIMICA','UNIAOQUIMICA':'UNIAO QUIMICA','CAP':'CAPSULAS','CAPS':'CAPSULAS','CAPSULA':'CAPSULAS','CP':'COMPRIMIDOS','CPR':'COMPRIMIDOS','CPRS':'COMPRIMIDOS','COMP':'COMPRIMIDOS','COMPRIMIDO':'COMPRIMIDOS',
  'UN':'UNIDADES','UND':'UNIDADES','UNID':'UNIDADES','UNIDS':'UNIDADES','MEDL':'MEDLEY','MOME':'MOMENTA'}
-MAKERS={'MEDLEY','MOMENTA','EUROFARMA','EMS','CIMED','GERMED','TEUTO','ACHE','PRATI','NEO QUIMICA','GLOBO','BIOSSINTETICA','BIOSINTETICA'}
+MAKERS={'UNIAO QUIMICA','MEDLEY','MOMENTA','EUROFARMA','EMS','CIMED','GERMED','TEUTO','ACHE','PRATI','NEO QUIMICA','GLOBO','BIOSSINTETICA','BIOSINTETICA'}
 
 def text(value):
  value=unicodedata.normalize('NFKD',str(value)).encode('ascii','ignore').decode().upper()
@@ -33,6 +33,7 @@ def profile(value):
  elif 'COTIDIAN' in expanded:core=['COTIDIAN','FRALDA']
  else:
   rest=expanded
+  if maker:rest=re.sub(r'\b'+re.escape(maker)+r'\b',' ',rest)
   rest=re.sub(r'\b\d+(?:[.,]\d+)?\s*(?:MCG|MG|ML|G)(?:\s*/\s*ML)?\b',' ',rest)
   rest=re.sub(r'\b\d+\s*(?:CAPSULAS|COMPRIMIDOS|UNIDADES|SACHES|AMPOLAS|FLACONETES)\b',' ',rest)
   stop={'GEN','GENERICO','COM','DE','DA','DO','C','CLASSICA','GERIATRICA','MOLE','MOLES','CAPSULAS','COMPRIMIDOS','UNIDADES','SACHES','AMPOLAS','FLACONETES','GOTAS'}|MAKERS
@@ -60,7 +61,8 @@ def compare(wanted,title,brand=''):
  if wanted['fabricante']:
   if re.search(r'\b'+wanted['fabricante']+r'\b',joined):checks.append('Fabricante confere')
   elif wanted['fabricante']=='MOMENTA' and re.search(r'\b20\s+BI\b',joined) and text(brand) in {'','20 BI','EUROFARMA','MOMENTA'}:pending.append('Conferir fabricante/versao Momenta ou Eurofarma na embalagem')
-  else:return None
+  elif actual['fabricante'] or profile(brand)['fabricante'] or (text(brand) and text(brand) not in {' '.join(wanted['principais']),wanted['fabricante']}):return None
+  else:pending.append('Fabricante nao informado; conferir na embalagem')
  if wanted['generico'] and 'GENERICO' not in joined:pending.append('Categoria generica nao informada no titulo')
  return {'conferencias':checks,'pendencias':pending,'pontuacao':len(checks)*10-len(pending)}
 

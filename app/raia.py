@@ -40,7 +40,7 @@ def props(raw):
  return data
 
 
-def product_offer(data,url,ean=None):
+def product_identity(data,url,ean=None):
  product=data.get('productData')
  if not isinstance(product,dict) or product.get('is3p') is not False or product.get('seller') is not None or str(product.get('status'))!='1':return None
  code=product.get('productEan')
@@ -49,6 +49,13 @@ def product_offer(data,url,ean=None):
  if attrs.get('ean') and attrs['ean']!=[code]:return None
  slug=attrs.get('url_key') or []
  if len(slug)!=1 or urlsplit(url).path!='/'+slug[0]+'.html':raise RaiaReadError('RAIA_PAGINA_DIVERGENTE','Pagina Raia diferente do produto solicitado.')
+ return product,code,attrs
+
+
+def product_offer(data,url,ean=None):
+ identity=product_identity(data,url,ean)
+ if identity is None:return None
+ product,code,attrs=identity
  live=product.get('liveComposition') or {};stock=live.get('liveStock') or {};price_data=live.get('livePrice') or {};aux=product.get('price_aux') or {}
  qty=stock.get('qty')
  if isinstance(qty,bool) or not isinstance(qty,(int,float)) or not math.isfinite(qty) or qty<=0:return None
@@ -98,8 +105,24 @@ def _offers(source,term,fetch,ean=None,wanted=None,ref=None):
   if known:return [known]
  for path in search_pages(source,term,fetch,limit=4 if ean else 6):
   url='https://'+source['host']+path
-  offer=product_offer(props(fetch(source,path)),url,ean)
-  if not offer or offer['ean'] in seen:continue
+  data=props(fetch(source,path))
+  offer=product_offer(data,url,ean)
+  if not offer:
+   # Produto proprio identificado, mas sem disponibilidade: permite conferir
+   # o catalogo sem transformar preco de referencia em oferta compravel.
+   identity=product_identity(data,url,ean)
+   if wanted and identity:
+    product,code,attrs=identity
+    qty=((product.get('liveComposition') or {}).get('liveStock') or {}).get('qty')
+    if not isinstance(qty,bool) and isinstance(qty,(int,float)) and qty==0 and code not in seen:
+     title=str(product.get('name') or '')[:300]
+     maker=str(next(iter(attrs.get('fabricante') or attrs.get('marca') or []),''))[:100]
+     match=compare(wanted,title,maker)
+     if match is not None:
+      match['pendencias'].append('Catalogo sem disponibilidade confirmada; consulte CEP e estoque no site')
+      result.append(dict(ean=code,produto=title,marca=maker,url=url,oferta=None,**match));seen.add(code)
+   continue
+  if offer['ean'] in seen:continue
   if ref and offer.get('composicao')!=ref:continue
   if wanted:
    match=compare(wanted,offer['produto'],offer['laboratorio'])

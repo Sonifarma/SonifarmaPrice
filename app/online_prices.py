@@ -167,8 +167,17 @@ def query_source(path,key,ean,descricao="",force=False):
 
 def description_catalog(source,wanted):
  if not wanted['consulta']:return []
- if source.get('adaptador')=='raia':return raia.offers(source,wanted['consulta'],public_document,wanted=wanted)
- path='/api/catalog_system/pub/products/search/'+quote(wanted['consulta'],safe='')
+ queries=list(dict.fromkeys([wanted['consulta'],' '.join(wanted['principais']).lower()]))
+ for term in queries:
+  if not term:continue
+  candidates=description_catalog_query(source,wanted,term)
+  if candidates:return candidates
+ return []
+
+
+def description_catalog_query(source,wanted,term):
+ if source.get('adaptador')=='raia':return raia.offers(source,term,public_document,wanted=wanted)
+ path='/api/catalog_system/pub/products/search/'+quote(term,safe='')
  products=catalog_data(source,path);candidates=[];seen=set()
  for product in products:
   if not isinstance(product,dict):continue
@@ -326,7 +335,7 @@ def make_router(path,distance):
      result.update(ofertas=[dict(chosen['oferta'],correspondencia='descricao_confirmada' if confirmed else 'ean')],coletado_em=found['coletado_em'],cache=found['cache'],desatualizado=found['desatualizado'],estado='descricao_confirmada' if confirmed else 'ean_por_descricao')
      result.pop('mensagem',None)
     elif selected:result.update(ofertas=[],mensagem='O candidato selecionado nao esta mais disponivel nesta busca. Confira novamente a apresentacao.')
-    elif candidates:result['mensagem']='Produtos encontrados por descricao. Confira apresentacao e EAN e escolha o correspondente para incluir o preco no grafico.'
+    elif candidates:result['mensagem']=('Produtos encontrados por descricao. Confira apresentacao e EAN e escolha o correspondente para incluir o preco no grafico.' if any(c.get('oferta') for c in candidates) else 'Produto identificado no catalogo, mas sem oferta propria disponivel. Abra a pagina para conferir CEP, estoque e vendedor; nenhum preco foi incluido no grafico.')
     elif found.get('mensagem'):result['mensagem']=((result.get('mensagem')+' ') if result.get('mensagem') else '')+found['mensagem']
     if found.get('desatualizado'):result['aviso_descricao']='Busca por descricao com coleta anterior; confira a data.' if found.get('coletado_em') else 'Busca por descricao indisponivel; nao ha candidatos de coleta anterior.'
    result.update(fonte=key,rede=source['nome'],grupo=group_for_stores(related),lojas_no_raio=[{'id':s['id'],'nome':s['nome'],'endereco':s['endereco'],'distancia_km':s['distancia_km']} for s in related])
