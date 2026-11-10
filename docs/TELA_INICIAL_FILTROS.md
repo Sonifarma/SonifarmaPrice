@@ -18,7 +18,7 @@ A API mantém `periodo=todos` e `data_filtro=entrada` para compatibilidade com c
 
 O usuário confirmou que `notafiscal.status=C` significa concluída e `tipomovimentacaofisica=A` adiciona estoque. A fonte padrão agora usa `notafiscal.datahoraentrada`, com vínculo `itemnotafiscal.notafiscalid -> notafiscal.id` e `itemnotafiscal.embalagemid -> embalagem.id -> embalagem.produtoid`. Calcula MAX por produto, em todas as suas embalagens, na unidade configurada, com fornecedor identificado, quantidade positiva, sem bonificação e sem item sem movimentação. O histórico de custo não fornece a data de compra.
 
-CFOPs padrão: 1102,2102,3102,1403,2403 e os de venda do emitente que podem ser conservados no XML importado: 5101,5102,5401,5403,6101,6102,6401,6403,7101,7102. A lista contempla compras usuais de mercadoria para revenda e exclui devoluções, transferências e notas que referenciam cupons (5929). Operações especiais fora dessa lista não participam até configurar `A7_PURCHASE_CFOPS` com uma lista separada por vírgulas.
+CFOPs padrão: 1102,2102,3102,1403,2403 e os de venda do emitente que podem ser conservados no XML importado: 5101,5102,5401,5403,5405,6101,6102,6401,6403,7101,7102. A lista contempla compras usuais de mercadoria para revenda e exclui devoluções, transferências e notas que referenciam cupons (5929). Operações especiais fora dessa lista não participam até configurar `A7_PURCHASE_CFOPS` com uma lista separada por vírgulas.
 
 Instalações sem configuração anterior passam a usar essa fonte automaticamente após atualizar e reiniciar. Não é necessário alterar o `.env`. Fontes planas anteriormente configuradas continuam preservadas. `A7_PURCHASE_CONFIRMED=0` desabilita explicitamente a fonte; se essa opção tiver sido incluída manualmente, mudar para 1 para ativar. As opções abaixo permitem sobrescrever os padrões:
 
@@ -40,3 +40,5 @@ cd C:\SonifarmaPrice
 ```
 
 O arquivo fica em `data\diagnostico_compras_*.json`. Quando a fonte estiver desativada, a tela oferece uma ação explícita para consultar sem filtro de compra; não apresenta resultados sem datas como se fossem os últimos 45 dias.
+
+V1.7.15: inclui o CFOP 5405 conservado no XML do fornecedor. A ultima compra usa datahoraentrada: nota emitida em 06/11 e recebida em 09/11 aparece como 09/11. Configuracoes explicitas de A7_PURCHASE_CFOPS continuam preservadas.
