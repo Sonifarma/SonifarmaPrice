@@ -2,7 +2,7 @@
 import re
 import unicodedata
 
-ALIASES={'AMP':'AMPOLAS','AMPS':'AMPOLAS','AMPOLA':'AMPOLAS','FLACONETE':'FLACONETES','GTS':'GOTAS','FRD':'FRALDA','GERIA':'GERIATRICA','GERIAT':'GERIATRICA','CLAS':'CLASSICA',
+ALIASES={'SAB':'SABONETE','INF':'INFANTIL','GLIC':'GLICERINA','GLICER':'GLICERINA','AMP':'AMPOLAS','AMPS':'AMPOLAS','AMPOLA':'AMPOLAS','FLACONETE':'FLACONETES','GTS':'GOTAS','FRD':'FRALDA','GERIA':'GERIATRICA','GERIAT':'GERIATRICA','CLAS':'CLASSICA',
  'CPS':'CAPSULAS','UNIAOQ':'UNIAO QUIMICA','UNIAOQUIMICA':'UNIAO QUIMICA','CAP':'CAPSULAS','CAPS':'CAPSULAS','CAPSULA':'CAPSULAS','CP':'COMPRIMIDOS','CPR':'COMPRIMIDOS','CPRS':'COMPRIMIDOS','COMP':'COMPRIMIDOS','COMPRIMIDO':'COMPRIMIDOS',
  'UN':'UNIDADES','UND':'UNIDADES','UNID':'UNIDADES','UNIDS':'UNIDADES','MEDL':'MEDLEY','MOME':'MOMENTA'}
 MAKERS={'UNIAO QUIMICA','MEDLEY','MOMENTA','EUROFARMA','EMS','CIMED','GERMED','TEUTO','ACHE','PRATI','NEO QUIMICA','GLOBO','BIOSSINTETICA','BIOSINTETICA'}
@@ -33,6 +33,8 @@ def profile(value):
  elif 'COTIDIAN' in expanded:core=['COTIDIAN','FRALDA']
  else:
   rest=expanded
+  # Bebe ja identifica a linha infantil; muitos catalogos omitem esse adjetivo.
+  if 'SABONETE' in expanded.split() and 'BEBE' in expanded.split():rest=re.sub(r'\bINFANTIL\b',' ',rest)
   if maker:rest=re.sub(r'\b'+re.escape(maker)+r'\b',' ',rest)
   rest=re.sub(r'\b\d+(?:[.,]\d+)?\s*(?:MCG|MG|ML|G)(?:\s*/\s*ML)?\b',' ',rest)
   rest=re.sub(r'\b\d+\s*(?:CAPSULAS|COMPRIMIDOS|UNIDADES|SACHES|AMPOLAS|FLACONETES)\b',' ',rest)
@@ -48,6 +50,7 @@ def profile(value):
 
 def compare(wanted,title,brand=''):
  actual=profile(title);joined=text(title+' '+brand);pending=[];checks=[]
+ if 'SABONETE' in wanted['principais'] and any(re.fullmatch(r'\d+(?:[.,]\d+)?G',dose) for dose in wanted['doses']) and actual['volumes_ml'] and not actual['doses']:return None
  if not wanted['principais'] or any(not re.search(r'\b'+re.escape(w)+r'\b',joined) for w in wanted['principais']):return None
  for key,label in [('doses','Dosagem'),('quantidade','Quantidade'),('forma','Apresentacao'),('tamanho','Tamanho'),('volumes_ml','Volume')]:
   required=wanted.get(key);found=actual.get(key)
